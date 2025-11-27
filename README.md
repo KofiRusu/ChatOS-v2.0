@@ -32,6 +32,24 @@ ChatOS is inspired by [PewDiePie's custom AI setup](https://www.youtube.com/watc
 - Python 3.9+ (tested on Python 3.10, 3.11, 3.12)
 - Linux (Kali, Ubuntu, Debian) or macOS
 - ~100MB disk space
+- **Ollama** (recommended) for local LLMs like Qwen, Llama, etc.
+
+### Quick Ollama + Qwen Setup (Recommended)
+
+```bash
+# Install Ollama (Linux)
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Start Ollama service
+ollama serve &
+
+# Pull Qwen model (your primary model)
+ollama pull qwen2.5          # Base model
+ollama pull qwen2.5-coder    # For coding tasks
+
+# Verify
+ollama list
+```
 
 ### Installation
 
@@ -254,9 +272,34 @@ For production use, consider:
 
 ---
 
+## Training & Fine-Tuning Qwen
+
+ChatOS is designed to work with local Qwen models that you can train and enhance.
+
+See **[TRAINING.md](TRAINING.md)** for:
+- Setting up Qwen as your primary model
+- Fine-tuning with LoRA/QLoRA
+- Creating custom training data
+- Converting and deploying fine-tuned models
+- Performance optimization tips
+
+Quick example:
+```bash
+# Create custom Qwen variant
+cat > Modelfile << 'EOF'
+FROM qwen2.5
+SYSTEM "You are a helpful AI assistant in the ChatOS council."
+PARAMETER temperature 0.7
+EOF
+
+ollama create my-chatos-qwen -f Modelfile
+```
+
+---
+
 ## Roadmap
 
-- [ ] Real LLM integrations (Ollama, llama.cpp)
+- [x] Real LLM integrations (Ollama, Qwen, llama.cpp)
 - [ ] Embedding-based RAG with FAISS
 - [ ] Streaming responses
 - [ ] Multiple conversation sessions

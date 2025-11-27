@@ -48,11 +48,17 @@ class ModelProvider(str, Enum):
 PROVIDER_INFO = {
     ModelProvider.OLLAMA: {
         "name": "Ollama",
-        "description": "Run local models with Ollama",
+        "description": "Run local models with Ollama (Qwen, Llama, etc.)",
         "type": "local",
         "default_url": "http://localhost:11434",
         "install_url": "https://ollama.ai",
-        "models": ["llama3.2", "llama3.1", "qwen2.5", "mistral", "codellama", "deepseek-coder", "phi3", "gemma2"],
+        # Qwen models listed first as primary options
+        "models": [
+            "qwen2.5", "qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b", "qwen2.5:72b",
+            "qwen2.5-coder", "qwen2.5-coder:7b", "qwen2.5-coder:14b", "qwen2.5-coder:32b",
+            "qwen2", "qwen2:7b", "qwen2:72b",
+            "llama3.2", "llama3.1", "mistral", "codellama", "deepseek-coder", "phi3", "gemma2"
+        ],
     },
     ModelProvider.LM_STUDIO: {
         "name": "LM Studio",
@@ -207,10 +213,12 @@ class ProviderStatus:
 class GlobalSettings:
     """Global application settings."""
     
-    default_provider: ModelProvider = ModelProvider.DUMMY
+    # Default to Ollama for local models (Qwen, Llama, etc.)
+    # Falls back to dummy models if Ollama is not running
+    default_provider: ModelProvider = ModelProvider.OLLAMA
     council_enabled: bool = True
     council_strategy: str = "longest"  # longest, voting, first
-    use_local_only: bool = False  # Restrict to local models only
+    use_local_only: bool = True  # Prefer local models (Ollama/Qwen)
     fallback_to_dummy: bool = True  # Use dummy if no models available
     
     # RAG settings
