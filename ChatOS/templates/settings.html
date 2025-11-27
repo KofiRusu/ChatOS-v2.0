@@ -282,6 +282,8 @@
                     e.preventDefault();
                     const section = item.dataset.section;
                     showSection(section);
+                    // Update URL hash without reload
+                    history.pushState(null, '', `#${section}`);
                 });
             });
 
@@ -291,7 +293,24 @@
                 loadModels(),
                 loadSettings(),
             ]);
+
+            // Handle hash navigation from sidebar links
+            handleHashNavigation();
+            window.addEventListener('hashchange', handleHashNavigation);
         });
+
+        function handleHashNavigation() {
+            const hash = window.location.hash.replace('#', '');
+            const validSections = ['providers', 'models', 'council', 'api-keys', 'general'];
+            
+            if (hash && validSections.includes(hash)) {
+                showSection(hash);
+                // Load API keys if that section is selected
+                if (hash === 'api-keys') {
+                    loadApiKeyStatuses();
+                }
+            }
+        }
 
         function showSection(sectionId) {
             document.querySelectorAll('.settings-section').forEach(s => s.classList.remove('active'));

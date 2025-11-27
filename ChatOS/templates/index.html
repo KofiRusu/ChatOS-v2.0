@@ -64,23 +64,47 @@
             </div>
 
             <div class="sidebar-section">
+                <h3 class="section-title">Strategy</h3>
+                <div class="strategy-badge" id="strategy-display">
+                    <span class="strategy-icon">🎯</span>
+                    <span>Longest wins</span>
+                </div>
+            </div>
+
+            <div class="sidebar-section settings-section">
                 <h3 class="section-title">Settings</h3>
                 
+                <!-- Quick Toggle -->
                 <div class="setting-item">
                     <label class="toggle-label">
                         <input type="checkbox" id="use-rag" checked>
                         <span class="toggle-switch"></span>
                         <span>Use RAG</span>
                     </label>
-                    <small class="setting-hint">Include local document context</small>
                 </div>
-            </div>
 
-            <div class="sidebar-section">
-                <h3 class="section-title">Strategy</h3>
-                <div class="strategy-badge" id="strategy-display">
-                    <span class="strategy-icon">🎯</span>
-                    <span>Longest wins</span>
+                <!-- Settings Sub-Menu -->
+                <div class="settings-menu">
+                    <a href="/settings#providers" class="settings-menu-item">
+                        <span class="settings-icon">🔌</span>
+                        <span>Providers</span>
+                    </a>
+                    <a href="/settings#models" class="settings-menu-item">
+                        <span class="settings-icon">🤖</span>
+                        <span>Models</span>
+                    </a>
+                    <a href="/settings#council" class="settings-menu-item">
+                        <span class="settings-icon">👥</span>
+                        <span>Council</span>
+                    </a>
+                    <a href="/settings#api-keys" class="settings-menu-item">
+                        <span class="settings-icon">🔑</span>
+                        <span>API Keys</span>
+                    </a>
+                    <a href="/settings#general" class="settings-menu-item">
+                        <span class="settings-icon">⚙️</span>
+                        <span>General</span>
+                    </a>
                 </div>
             </div>
 
@@ -90,9 +114,6 @@
                 </a>
                 <a href="/sandbox" class="btn btn-secondary btn-small sidebar-btn">
                     💻 Sandbox
-                </a>
-                <a href="/settings" class="btn btn-secondary btn-small sidebar-btn">
-                    ⚙️ Settings
                 </a>
                 <button class="btn btn-secondary btn-small" onclick="clearChat()">
                     🗑️ Clear Chat

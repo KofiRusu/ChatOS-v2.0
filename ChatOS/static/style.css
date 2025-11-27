@@ -317,6 +317,47 @@ body {
     font-size: 16px;
 }
 
+/* Settings Section */
+.settings-section .setting-item {
+    margin-bottom: 12px;
+}
+
+.settings-menu {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.settings-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    text-decoration: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.settings-menu-item:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border-color: var(--border-hover);
+}
+
+.settings-menu-item:active {
+    transform: scale(0.98);
+}
+
+.settings-icon {
+    font-size: 14px;
+    width: 20px;
+    text-align: center;
+}
+
 /* Sidebar Footer */
 .sidebar-footer {
     margin-top: auto;
