@@ -28,6 +28,8 @@ from ChatOS.controllers.sandbox import get_sandbox, CodeEdit
 from ChatOS.controllers.projects import get_project_manager
 from ChatOS.controllers.attachments import get_attachment_manager
 from ChatOS.controllers.project_memory import get_project_memory_manager
+from ChatOS.controllers.model_config import get_model_config_manager, ModelConfig, ModelProvider
+from ChatOS.controllers.llm_client import get_llm_client
 from ChatOS.schemas import (
     ChatRequest,
     ChatResponse,
@@ -56,6 +58,15 @@ from ChatOS.schemas import (
     ProjectMemoryAddRequest,
     TaskCreateRequest,
     ProjectContextResponse,
+    ModelConfigCreate,
+    ModelConfigUpdate,
+    ModelConfigResponse,
+    ProviderInfoResponse,
+    ProviderStatusResponse,
+    GlobalSettingsUpdate,
+    GlobalSettingsResponse,
+    ApiKeyRequest,
+    OllamaModelRequest,
 )
 
 # =============================================================================
@@ -99,6 +110,11 @@ async def sandbox_page(request: Request) -> HTMLResponse:
 @app.get("/projects", response_class=HTMLResponse, include_in_schema=False)
 async def projects_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "projects.html")
+
+
+@app.get("/settings", response_class=HTMLResponse, include_in_schema=False)
+async def settings_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "settings.html")
 
 
 # =============================================================================
@@ -505,6 +521,227 @@ async def list_tasks(project_id: str):
     db = mem_mgr.get_db(project_id, project.path)
     tasks = db.get_active_tasks()
     return {"tasks": tasks}
+
+
+# =============================================================================
+# Settings & Model Configuration API
+# =============================================================================
+
+@app.get("/api/settings", response_model=GlobalSettingsResponse, tags=["Settings"])
+async def get_settings():
+    """Get global settings."""
+    mgr = get_model_config_manager()
+    settings = mgr.get_settings()
+    return GlobalSettingsResponse(
+        default_provider=settings.default_provider.value,
+        council_enabled=settings.council_enabled,
+        council_strategy=settings.council_strategy,
+        use_local_only=settings.use_local_only,
+        fallback_to_dummy=settings.fallback_to_dummy,
+        rag_enabled=settings.rag_enabled,
+        rag_top_k=settings.rag_top_k,
+        memory_max_turns=settings.memory_max_turns,
+    )
+
+
+@app.patch("/api/settings", response_model=GlobalSettingsResponse, tags=["Settings"])
+async def update_settings(request: GlobalSettingsUpdate):
+    """Update global settings."""
+    mgr = get_model_config_manager()
+    updates = {k: v for k, v in request.model_dump().items() if v is not None}
+    settings = mgr.update_settings(updates)
+    return GlobalSettingsResponse(
+        default_provider=settings.default_provider.value,
+        council_enabled=settings.council_enabled,
+        council_strategy=settings.council_strategy,
+        use_local_only=settings.use_local_only,
+        fallback_to_dummy=settings.fallback_to_dummy,
+        rag_enabled=settings.rag_enabled,
+        rag_top_k=settings.rag_top_k,
+        memory_max_turns=settings.memory_max_turns,
+    )
+
+
+@app.get("/api/providers", response_model=List[ProviderInfoResponse], tags=["Settings"])
+async def list_providers():
+    """List all available model providers."""
+    mgr = get_model_config_manager()
+    return [ProviderInfoResponse(**p) for p in mgr.list_providers()]
+
+
+@app.get("/api/providers/{provider_id}/status", response_model=ProviderStatusResponse, tags=["Settings"])
+async def check_provider_status(provider_id: str):
+    """Check if a provider is available."""
+    mgr = get_model_config_manager()
+    try:
+        provider = ModelProvider(provider_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider_id}")
+    
+    status = await mgr.check_provider_status(provider)
+    return ProviderStatusResponse(
+        provider=status.provider.value,
+        available=status.available,
+        error=status.error,
+        models=status.models,
+        version=status.version,
+    )
+
+
+@app.get("/api/models", response_model=List[ModelConfigResponse], tags=["Settings"])
+async def list_model_configs(enabled_only: bool = False, council_only: bool = False):
+    """List configured models."""
+    mgr = get_model_config_manager()
+    models = mgr.list_models(enabled_only=enabled_only, council_only=council_only)
+    return [
+        ModelConfigResponse(
+            id=m.id,
+            name=m.name,
+            provider=m.provider.value,
+            model_id=m.model_id,
+            enabled=m.enabled,
+            is_council_member=m.is_council_member,
+            base_url=m.base_url,
+            temperature=m.temperature,
+            max_tokens=m.max_tokens,
+            created_at=m.created_at.isoformat(),
+        )
+        for m in models
+    ]
+
+
+@app.post("/api/models", response_model=ModelConfigResponse, tags=["Settings"])
+async def create_model_config(request: ModelConfigCreate):
+    """Add a new model configuration."""
+    mgr = get_model_config_manager()
+    
+    try:
+        provider = ModelProvider(request.provider)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {request.provider}")
+    
+    import uuid
+    model_id = f"{request.provider}-{str(uuid.uuid4())[:8]}"
+    
+    config = ModelConfig(
+        id=model_id,
+        name=request.name,
+        provider=provider,
+        model_id=request.model_id,
+        enabled=request.enabled,
+        is_council_member=request.is_council_member,
+        base_url=request.base_url,
+        temperature=request.temperature,
+        max_tokens=request.max_tokens,
+    )
+    
+    mgr.add_model(config)
+    
+    return ModelConfigResponse(
+        id=config.id,
+        name=config.name,
+        provider=config.provider.value,
+        model_id=config.model_id,
+        enabled=config.enabled,
+        is_council_member=config.is_council_member,
+        base_url=config.base_url,
+        temperature=config.temperature,
+        max_tokens=config.max_tokens,
+        created_at=config.created_at.isoformat(),
+    )
+
+
+@app.patch("/api/models/{model_id}", response_model=ModelConfigResponse, tags=["Settings"])
+async def update_model_config(model_id: str, request: ModelConfigUpdate):
+    """Update a model configuration."""
+    mgr = get_model_config_manager()
+    
+    updates = {k: v for k, v in request.model_dump().items() if v is not None}
+    config = mgr.update_model(model_id, updates)
+    
+    if not config:
+        raise HTTPException(status_code=404, detail="Model not found")
+    
+    return ModelConfigResponse(
+        id=config.id,
+        name=config.name,
+        provider=config.provider.value,
+        model_id=config.model_id,
+        enabled=config.enabled,
+        is_council_member=config.is_council_member,
+        base_url=config.base_url,
+        temperature=config.temperature,
+        max_tokens=config.max_tokens,
+        created_at=config.created_at.isoformat(),
+    )
+
+
+@app.delete("/api/models/{model_id}", tags=["Settings"])
+async def delete_model_config(model_id: str):
+    """Delete a model configuration."""
+    mgr = get_model_config_manager()
+    if mgr.delete_model(model_id):
+        return {"success": True}
+    raise HTTPException(status_code=404, detail="Model not found or cannot be deleted")
+
+
+@app.post("/api/providers/{provider_id}/api-key", tags=["Settings"])
+async def set_api_key(provider_id: str, request: ApiKeyRequest):
+    """Set API key for a provider."""
+    mgr = get_model_config_manager()
+    try:
+        provider = ModelProvider(provider_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider_id}")
+    
+    mgr.set_api_key(provider, request.api_key)
+    return {"success": True}
+
+
+@app.delete("/api/providers/{provider_id}/api-key", tags=["Settings"])
+async def delete_api_key(provider_id: str):
+    """Delete API key for a provider."""
+    mgr = get_model_config_manager()
+    try:
+        provider = ModelProvider(provider_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider_id}")
+    
+    mgr.delete_api_key(provider)
+    return {"success": True}
+
+
+@app.get("/api/providers/{provider_id}/has-key", tags=["Settings"])
+async def check_api_key(provider_id: str):
+    """Check if API key is configured for a provider."""
+    mgr = get_model_config_manager()
+    try:
+        provider = ModelProvider(provider_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider_id}")
+    
+    return {"has_key": mgr.has_api_key(provider)}
+
+
+# Ollama-specific endpoints
+@app.post("/api/ollama/pull", tags=["Ollama"])
+async def pull_ollama_model(request: OllamaModelRequest):
+    """Pull/install an Ollama model."""
+    mgr = get_model_config_manager()
+    result = await mgr.pull_ollama_model(request.model_name)
+    if result["success"]:
+        return result
+    raise HTTPException(status_code=500, detail=result.get("error", "Failed to pull model"))
+
+
+@app.delete("/api/ollama/model/{model_name}", tags=["Ollama"])
+async def delete_ollama_model(model_name: str):
+    """Delete an Ollama model."""
+    mgr = get_model_config_manager()
+    result = await mgr.delete_ollama_model(model_name)
+    if result["success"]:
+        return result
+    raise HTTPException(status_code=500, detail=result.get("error", "Failed to delete model"))
 
 
 # =============================================================================

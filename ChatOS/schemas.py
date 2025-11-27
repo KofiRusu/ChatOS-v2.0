@@ -260,6 +260,100 @@ class ProjectContextResponse(BaseModel):
 
 
 # =============================================================================
+# Model Configuration
+# =============================================================================
+
+class ModelConfigCreate(BaseModel):
+    """Request to create a model configuration."""
+    name: str = Field(..., description="Display name for the model")
+    provider: str = Field(..., description="Provider ID (ollama, openai, etc.)")
+    model_id: str = Field(..., description="Model identifier (e.g., llama3.2, gpt-4o)")
+    enabled: bool = Field(default=True)
+    is_council_member: bool = Field(default=True, description="Include in council voting")
+    base_url: Optional[str] = Field(None, description="Custom API endpoint URL")
+    temperature: float = Field(default=0.7)
+    max_tokens: int = Field(default=2048)
+
+
+class ModelConfigUpdate(BaseModel):
+    """Request to update a model configuration."""
+    name: Optional[str] = None
+    enabled: Optional[bool] = None
+    is_council_member: Optional[bool] = None
+    base_url: Optional[str] = None
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+
+
+class ModelConfigResponse(BaseModel):
+    """Model configuration response."""
+    id: str
+    name: str
+    provider: str
+    model_id: str
+    enabled: bool
+    is_council_member: bool
+    base_url: Optional[str]
+    temperature: float
+    max_tokens: int
+    created_at: str
+
+
+class ProviderInfoResponse(BaseModel):
+    """Provider information."""
+    id: str
+    name: str
+    description: str
+    type: str  # "local", "api", "builtin"
+    requires_key: bool
+    default_models: List[str]
+
+
+class ProviderStatusResponse(BaseModel):
+    """Provider status check result."""
+    provider: str
+    available: bool
+    error: Optional[str]
+    models: List[str]
+    version: Optional[str]
+
+
+class GlobalSettingsUpdate(BaseModel):
+    """Update global settings."""
+    default_provider: Optional[str] = None
+    council_enabled: Optional[bool] = None
+    council_strategy: Optional[str] = None
+    use_local_only: Optional[bool] = None
+    fallback_to_dummy: Optional[bool] = None
+    rag_enabled: Optional[bool] = None
+    rag_top_k: Optional[int] = None
+    memory_max_turns: Optional[int] = None
+
+
+class GlobalSettingsResponse(BaseModel):
+    """Global settings response."""
+    default_provider: str
+    council_enabled: bool
+    council_strategy: str
+    use_local_only: bool
+    fallback_to_dummy: bool
+    rag_enabled: bool
+    rag_top_k: int
+    memory_max_turns: int
+
+
+class ApiKeyRequest(BaseModel):
+    """Request to set API key."""
+    provider: str
+    api_key: str
+
+
+class OllamaModelRequest(BaseModel):
+    """Request for Ollama model operations."""
+    model_name: str
+
+
+# =============================================================================
 # Error
 # =============================================================================
 
