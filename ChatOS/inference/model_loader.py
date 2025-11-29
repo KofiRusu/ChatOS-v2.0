@@ -142,9 +142,17 @@ def _scan_model_directory(model_dir: Path) -> Optional[FineTunedModel]:
     
     display_name = _generate_display_name(base_model, dataset_version, job_id, preset_name)
     
+    # Check if model info has ollama info, otherwise generate/check
+    ollama_model_name = metadata.get("ollama_model_name") or _get_ollama_model_name(display_name)
+    ollama_registered = metadata.get("ollama_registered", False)
+    
+    # If model_info says registered, verify with actual ollama
+    if ollama_registered or modelfile_path:
+        ollama_registered = _check_ollama_registered(ollama_model_name)
+    
     return FineTunedModel(
         id=job_id,
-        display_name=display_name,
+        display_name=metadata.get("display_name") or display_name,
         base_model=base_model,
         dataset_version=dataset_version,
         job_id=job_id,
@@ -155,8 +163,8 @@ def _scan_model_directory(model_dir: Path) -> Optional[FineTunedModel]:
         adapter_path=adapter_path,
         gguf_path=gguf_path,
         modelfile_path=modelfile_path,
-        ollama_registered=_check_ollama_registered(display_name),
-        ollama_model_name=_get_ollama_model_name(display_name) if modelfile_path else None,
+        ollama_registered=ollama_registered,
+        ollama_model_name=ollama_model_name if ollama_registered else None,
     )
 
 
@@ -202,14 +210,29 @@ def get_fine_tuned_models() -> List[Dict[str, Any]]:
 
 def _check_ollama_registered(model_name: str) -> bool:
     """Check if a model is registered with Ollama."""
-    # Would need to call `ollama list` to check
-    # For now, return False (can be enhanced later)
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        if result.returncode == 0:
+            # Parse ollama list output
+            lines = result.stdout.strip().split('\n')
+            for line in lines[1:]:  # Skip header
+                if model_name.lower() in line.lower():
+                    return True
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
     return False
 
 
 def _get_ollama_model_name(display_name: str) -> str:
     """Generate the Ollama model name."""
-    return display_name.lower().replace("-", "_")
+    # Keep dashes, just lowercase
+    return display_name.lower()
 
 
 def export_model_for_ollama(
