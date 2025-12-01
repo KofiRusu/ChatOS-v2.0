@@ -27,9 +27,14 @@ class TrainingJobSpec:
     id: str = field(default_factory=lambda: f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}")
     description: Optional[str] = None
     
+    # AI Project integration (optional)
+    project_id: Optional[str] = None  # AI project ID if training is project-specific
+    project_name: Optional[str] = None  # Convenience field for display
+    
     # Preset and model info
     preset_name: str = "BALANCED"
     model_key: str = "qwen2.5-7b-instruct"  # Key in MODEL_CONFIGS
+    training_type: str = "chatos"  # "chatos" or "persrm"
     
     # Dataset versioning
     dataset_version: int = 0
@@ -51,6 +56,11 @@ class TrainingJobSpec:
     gradient_accumulation_steps: int = 8
     warmup_ratio: float = 0.03
     weight_decay: float = 0.01
+    # Backwards compatibility fields for legacy scripts
+    epochs: Optional[float] = None
+    batch_size: Optional[int] = None
+    train_dataset_path: Optional[str] = None
+    eval_dataset_path: Optional[str] = None
     
     # LoRA configuration
     lora_r: int = 16
@@ -68,6 +78,14 @@ class TrainingJobSpec:
     
     def __post_init__(self):
         """Set default paths if not provided."""
+        if self.epochs is not None:
+            self.num_epochs = self.epochs
+        if self.batch_size is not None:
+            self.per_device_batch_size = self.batch_size
+        if self.train_dataset_path:
+            self.dataset_train_path = str(Path(self.train_dataset_path).resolve())
+        if self.eval_dataset_path:
+            self.dataset_eval_path = str(Path(self.eval_dataset_path).resolve())
         if not self.dataset_train_path:
             self.dataset_train_path = str(settings.unsloth_datasets_dir / "chatos_train.jsonl")
         if not self.dataset_eval_path:
@@ -126,31 +144,51 @@ class TrainingJobSpec:
         dataset_version: int = 0,
         dataset_sample_count: int = 0,
         description: Optional[str] = None,
+        training_type: str = "chatos",
+        project_id: Optional[str] = None,
+        project_name: Optional[str] = None,
     ) -> "TrainingJobSpec":
         """
         Create a TrainingJobSpec from a preset and model configuration.
         
         Args:
-            preset_name: Name of the preset (FAST, BALANCED, QUALITY)
+            preset_name: Name of the preset (FAST, BALANCED, QUALITY for ChatOS; FAST, REASONING, QUALITY for PersRM)
             model_key: Model key from MODEL_CONFIGS
             train_path: Path to training dataset
             eval_path: Path to evaluation dataset
             dataset_version: Dataset version number
             dataset_sample_count: Number of samples in dataset
             description: Optional job description
+            training_type: "chatos" or "persrm"
+            project_id: Optional AI project ID for project-specific training
+            project_name: Optional AI project name for display
         
         Returns:
             TrainingJobSpec configured from preset
         """
-        from ChatOS.training.presets import get_preset, get_model_config
+        from ChatOS.training.presets import (
+            get_preset_for_type, 
+            get_model_config,
+            get_persrm_model_config,
+            TrainingType,
+        )
         
-        preset = get_preset(preset_name)
-        model_config = get_model_config(model_key)
+        preset = get_preset_for_type(training_type, preset_name)
+        
+        # Use appropriate model config based on training type
+        is_persrm = training_type == TrainingType.PERSRM or training_type == "persrm"
+        if is_persrm:
+            model_config = get_persrm_model_config(model_key)
+        else:
+            model_config = get_model_config(model_key)
         
         spec = cls(
             description=description,
+            project_id=project_id,
+            project_name=project_name,
             preset_name=preset_name,
             model_key=model_key,
+            training_type=training_type,
             dataset_version=dataset_version,
             dataset_sample_count=dataset_sample_count,
             base_model_name=model_config.unsloth_name,
@@ -184,6 +222,8 @@ class TrainingJobSpec:
         """
         override = {
             "job_id": self.id,
+            "project_id": self.project_id,
+            "project_name": self.project_name,
             "model": {
                 "name": self.base_model_name,
                 "max_seq_length": self.max_seq_length,
@@ -234,3 +274,46 @@ class TrainingJobSpec:
         """Create from dictionary."""
         return cls(**data)
 
+    @classmethod
+    def for_persrm_standalone(
+        cls,
+        train_path: Optional[str] = None,
+        eval_path: Optional[str] = None,
+        preset_name: str = "STANDALONE",
+        model_key: str = "mistral-7b",
+        description: str = "PersRM Standalone Model Training",
+    ) -> "TrainingJobSpec":
+        """
+        Create a TrainingJobSpec optimized for PersRM Standalone training.
+        
+        Uses Mistral 7B with optimized QLoRA settings for chain-of-thought
+        reasoning with <think>/<answer> tags.
+        
+        Args:
+            train_path: Path to training dataset (default: persrm_standalone_train_latest.jsonl)
+            eval_path: Path to eval dataset (default: persrm_standalone_eval_latest.jsonl)
+            preset_name: Preset to use (STANDALONE, FAST, REASONING, QUALITY)
+            model_key: Model to use (mistral-7b, qwen2.5-7b, etc.)
+            description: Job description
+        
+        Returns:
+            TrainingJobSpec configured for PersRM Standalone
+        """
+        # Default paths for standalone training data
+        if not train_path:
+            train_path = str(
+                settings.memory_dir / "persrm_standalone_training" / "persrm_standalone_train_latest.jsonl"
+            )
+        if not eval_path:
+            eval_path = str(
+                settings.memory_dir / "persrm_standalone_training" / "persrm_standalone_eval_latest.jsonl"
+            )
+        
+        return cls.from_preset(
+            preset_name=preset_name,
+            model_key=model_key,
+            train_path=train_path,
+            eval_path=eval_path,
+            training_type="persrm",
+            description=description,
+        )

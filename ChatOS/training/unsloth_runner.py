@@ -18,14 +18,17 @@ import yaml
 
 from ChatOS.config.settings import settings
 from ChatOS.training.job_spec import TrainingJobSpec
+from ChatOS.training.presets import TrainingType
 
 
 def write_temp_config(job_spec: TrainingJobSpec) -> Path:
     """
     Generate a temporary YAML config file for Unsloth training.
     
-    Reads the base template from chatos_qlora.yaml and overrides
-    fields based on the job specification.
+    Selects the appropriate base template based on training type:
+    - ChatOS: chatos_qlora.yaml
+    - PersRM: persrm_qlora.yaml
+    - PersRM Standalone (Mistral): persrm_standalone_mistral.yaml
     
     Args:
         job_spec: Training job specification
@@ -33,11 +36,28 @@ def write_temp_config(job_spec: TrainingJobSpec) -> Path:
     Returns:
         Path to the generated config file
     """
-    # Load base config template
-    base_config_path = settings.unsloth_configs_dir / "chatos_qlora.yaml"
+    # Select base config template based on training type and model
+    if job_spec.training_type == TrainingType.PERSRM or job_spec.training_type == "persrm":
+        # Check if this is a standalone training on Mistral
+        if "mistral" in job_spec.base_model_name.lower() and job_spec.preset_name == "STANDALONE":
+            base_config_path = settings.unsloth_configs_dir / "persrm_standalone_mistral.yaml"
+        else:
+        base_config_path = settings.unsloth_configs_dir / "persrm_qlora.yaml"
+    else:
+        base_config_path = settings.unsloth_configs_dir / "chatos_qlora.yaml"
     
+    # Fallback chain: standalone -> persrm -> chatos
     if not base_config_path.exists():
-        raise FileNotFoundError(f"Base config not found: {base_config_path}")
+        fallback_paths = [
+            settings.unsloth_configs_dir / "persrm_qlora.yaml",
+            settings.unsloth_configs_dir / "chatos_qlora.yaml",
+        ]
+        for fallback_path in fallback_paths:
+        if fallback_path.exists():
+            base_config_path = fallback_path
+                break
+        else:
+            raise FileNotFoundError(f"No config found. Tried: {base_config_path}, {fallback_paths}")
     
     with open(base_config_path, "r") as f:
         config = yaml.safe_load(f)
@@ -84,11 +104,11 @@ def start_training_process(
     """
     Spawn an Unsloth training process.
     
-    ⚠️ RUNS ON KALI GPU ⚠️
+    ⚠️ REQUIRES GPU ⚠️
     This function spawns a subprocess that requires:
     - NVIDIA GPU with CUDA
-    - ~/unsloth_env virtual environment
-    - Unsloth and dependencies installed
+    - Conda environment with unsloth installed (or virtualenv)
+    - Unsloth and dependencies installed with CUDA-enabled PyTorch
     
     Args:
         job_spec: Training job specification
@@ -102,12 +122,25 @@ def start_training_process(
     log_path.parent.mkdir(parents=True, exist_ok=True)
     
     # Build the command
-    # ⚠️ RUNS ON KALI GPU - requires ~/unsloth_env and CUDA ⚠️
     unsloth_dir = settings.unsloth_pipelines_dir
     venv_path = settings.unsloth_venv_path
     
+    # Detect environment type and build activation command
+    # Support both virtualenv (source bin/activate) and conda environments
+    if (venv_path / "bin" / "activate").exists():
+        # Traditional virtualenv
+        activate_cmd = f'source {venv_path}/bin/activate'
+    elif (Path.home() / "miniforge3" / "bin" / "conda").exists():
+        # Conda environment - use conda activate
+        conda_path = Path.home() / "miniforge3"
+        env_name = venv_path.name if venv_path.name else "unsloth_py311"
+        activate_cmd = f'eval "$({conda_path}/bin/conda shell.bash hook)" && conda activate {env_name}'
+    else:
+        # Fallback - try direct source
+        activate_cmd = f'source {venv_path}/bin/activate'
+    
     cmd = (
-        f'source {venv_path}/bin/activate && '
+        f'{activate_cmd} && '
         f'cd {unsloth_dir} && '
         f'CHATOS_JOB_ID={job_spec.id} '
         f'PYTHONUNBUFFERED=1 '
@@ -117,10 +150,17 @@ def start_training_process(
     # Open log file for writing
     log_file = open(log_path, "w")
     
+    # Determine training type label
+    training_type_label = "PersRM" if (
+        job_spec.training_type == TrainingType.PERSRM or 
+        job_spec.training_type == "persrm"
+    ) else "ChatOS"
+    
     # Write header to log
     log_file.write(f"=" * 60 + "\n")
-    log_file.write(f"ChatOS Training Job: {job_spec.id}\n")
+    log_file.write(f"{training_type_label} Training Job: {job_spec.id}\n")
     log_file.write(f"Started: {datetime.now().isoformat()}\n")
+    log_file.write(f"Training Type: {training_type_label}\n")
     log_file.write(f"Model: {job_spec.base_model_name}\n")
     log_file.write(f"Config: {config_path}\n")
     log_file.write(f"=" * 60 + "\n\n")
@@ -214,4 +254,3 @@ def get_process_exit_code(pid: int) -> Optional[int]:
         return None
     except Exception:
         return None
-

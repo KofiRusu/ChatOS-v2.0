@@ -68,6 +68,9 @@ def create_job(
     """
     now = datetime.now().isoformat()
     
+    def _spec_attr(name: str, default: Any = None) -> Any:
+        return getattr(job_spec, name, default)
+    
     job = {
         "id": job_spec.id,
         "status": STATUS_RUNNING,
@@ -76,7 +79,7 @@ def create_job(
         "log_path": str(log_path),
         "output_dir": job_spec.output_dir,
         "base_model_name": job_spec.base_model_name,
-        "model_key": job_spec.model_key,
+        "model_key": _spec_attr("model_key", job_spec.base_model_name),
         "dataset_train_path": job_spec.dataset_train_path,
         "dataset_eval_path": job_spec.dataset_eval_path,
         "description": job_spec.description,
@@ -85,21 +88,21 @@ def create_job(
         "finished_at": None,
         "latest_metrics": None,
         "error_snippet": None,
-        # New versioning and preset fields
-        "preset_name": job_spec.preset_name,
-        "dataset_version": job_spec.dataset_version,
-        "dataset_sample_count": job_spec.dataset_sample_count,
+        # New versioning and preset fields (with backwards-compatible defaults)
+        "preset_name": _spec_attr("preset_name", "BALANCED"),
+        "dataset_version": _spec_attr("dataset_version", 1),
+        "dataset_sample_count": _spec_attr("dataset_sample_count", 0),
         "dataset_stats": dataset_stats,
         "hyperparameters": {
-            "learning_rate": job_spec.learning_rate,
-            "num_epochs": job_spec.num_epochs,
-            "max_steps": job_spec.max_steps,
-            "per_device_batch_size": job_spec.per_device_batch_size,
-            "gradient_accumulation_steps": job_spec.gradient_accumulation_steps,
-            "lora_r": job_spec.lora_r,
-            "lora_alpha": job_spec.lora_alpha,
-            "warmup_ratio": job_spec.warmup_ratio,
-            "weight_decay": job_spec.weight_decay,
+            "learning_rate": _spec_attr("learning_rate"),
+            "num_epochs": _spec_attr("num_epochs"),
+            "max_steps": _spec_attr("max_steps"),
+            "per_device_batch_size": _spec_attr("per_device_batch_size"),
+            "gradient_accumulation_steps": _spec_attr("gradient_accumulation_steps"),
+            "lora_r": _spec_attr("lora_r"),
+            "lora_alpha": _spec_attr("lora_alpha"),
+            "warmup_ratio": _spec_attr("warmup_ratio", 0.0),
+            "weight_decay": _spec_attr("weight_decay", 0.0),
         },
         # Export info (filled in after training)
         "export_info": None,
@@ -277,4 +280,3 @@ def get_job_count_by_status() -> Dict[str, int]:
         if status in counts:
             counts[status] += 1
     return counts
-

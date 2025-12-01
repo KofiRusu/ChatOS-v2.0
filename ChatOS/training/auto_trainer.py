@@ -1,8 +1,12 @@
 """
-auto_trainer.py - High-level training orchestration for ChatOS.
+auto_trainer.py - High-level training orchestration for ChatOS and PersRM.
 
 This module provides the main interface for triggering training jobs,
 including data collection, dataset generation, and job spawning.
+
+Supports two training types:
+- CHATOS: General chat/conversation fine-tuning from ChatOS logs
+- PERSRM: UI/UX reasoning fine-tuning from PersRM data
 """
 
 import logging
@@ -29,10 +33,16 @@ from ChatOS.training.unsloth_runner import write_temp_config, start_training_pro
 from ChatOS.training.presets import (
     get_preset,
     get_model_config,
+    get_persrm_model_config,
     list_presets,
     list_models,
     DEFAULT_PRESET,
     DEFAULT_MODEL,
+    DEFAULT_PERSRM_MODEL,
+    TrainingType,
+    get_preset_for_type,
+    get_default_preset_for_type,
+    list_presets_for_type,
 )
 
 
@@ -44,9 +54,25 @@ class TrainingError(Exception):
     pass
 
 
-def get_training_stats() -> Dict[str, Any]:
+def get_training_stats(training_type: str = "chatos") -> Dict[str, Any]:
     """
     Get statistics about available training data.
+    
+    Args:
+        training_type: "chatos" or "persrm"
+    
+    Returns:
+        Dict with stats about data and readiness for training
+    """
+    if training_type == TrainingType.PERSRM or training_type == "persrm":
+        return get_persrm_training_stats()
+    
+    return get_chatos_training_stats()
+
+
+def get_chatos_training_stats() -> Dict[str, Any]:
+    """
+    Get statistics about available ChatOS training data.
     
     Returns:
         Dict with stats about conversations and readiness for training
@@ -73,6 +99,7 @@ def get_training_stats() -> Dict[str, Any]:
         )
         
         return {
+            "training_type": "chatos",
             "total_conversations": stats.total_conversations,
             "filtered_conversations": stats.filtered_conversations,
             "training_examples": total_count,
@@ -86,8 +113,9 @@ def get_training_stats() -> Dict[str, Any]:
             "training_enabled": settings.enable_training_features,
         }
     except Exception as e:
-        logger.error(f"Error getting training stats: {e}")
+        logger.error(f"Error getting ChatOS training stats: {e}")
         return {
+            "training_type": "chatos",
             "error": str(e),
             "total_conversations": 0,
             "training_examples": 0,
@@ -96,7 +124,31 @@ def get_training_stats() -> Dict[str, Any]:
         }
 
 
+def get_persrm_training_stats() -> Dict[str, Any]:
+    """
+    Get statistics about available PersRM training data.
+    
+    Returns:
+        Dict with stats about reasoning examples and readiness
+    """
+    try:
+        from ChatOS.training.persrm_data_pipeline import get_persrm_training_stats as _get_stats
+        stats = _get_stats()
+        stats["training_type"] = "persrm"
+        return stats
+    except Exception as e:
+        logger.error(f"Error getting PersRM training stats: {e}")
+        return {
+            "training_type": "persrm",
+            "error": str(e),
+            "total_examples": 0,
+            "ready_to_train": False,
+            "training_enabled": settings.enable_training_features,
+        }
+
+
 def start_training_job(
+    training_type: str = "chatos",
     preset_name: Optional[str] = None,
     model_key: Optional[str] = None,
     description: Optional[str] = None,
@@ -115,10 +167,11 @@ def start_training_job(
     6. Saves the job record with full metadata
     
     Args:
-        preset_name: Training preset (FAST, BALANCED, QUALITY). Default: BALANCED
+        training_type: "chatos" for chat training, "persrm" for reasoning training
+        preset_name: Training preset. Default varies by type.
         model_key: Model to fine-tune (qwen2.5-7b-instruct, mistral-7b-instruct, etc.)
         description: Optional job description
-        min_score: Minimum feedback score for training examples
+        min_score: Minimum feedback score for training examples (ChatOS only)
         force: Skip readiness checks
     
     Returns:
@@ -127,14 +180,20 @@ def start_training_job(
     Raises:
         TrainingError: If training cannot be started
     """
-    # Use defaults if not specified
-    preset_name = preset_name or DEFAULT_PRESET
-    model_key = model_key or DEFAULT_MODEL
+    # Normalize training type
+    is_persrm = training_type == TrainingType.PERSRM or training_type == "persrm"
     
-    # Validate preset and model
+    # Use defaults if not specified - use appropriate default model for training type
+    preset_name = preset_name or get_default_preset_for_type(training_type)
+    model_key = model_key or (DEFAULT_PERSRM_MODEL if is_persrm else DEFAULT_MODEL)
+    
+    # Validate preset and model - use appropriate model config for training type
     try:
-        preset = get_preset(preset_name)
-        model_config = get_model_config(model_key)
+        preset = get_preset_for_type(training_type, preset_name)
+        if is_persrm:
+            model_config = get_persrm_model_config(model_key)
+        else:
+            model_config = get_model_config(model_key)
     except ValueError as e:
         raise TrainingError(str(e))
     
@@ -152,28 +211,47 @@ def start_training_job(
     
     # Check if we have enough data (unless forcing)
     if not force:
-        stats = get_training_stats()
+        stats = get_training_stats(training_type)
         if not stats.get("ready_to_train", False):
-            raise TrainingError(
-                f"Not ready to train. Have {stats.get('training_examples', 0)} examples, "
-                f"need {settings.min_samples_for_training}. "
-                f"Quality ratio: {stats.get('current_quality_ratio', 0):.2f}"
-            )
+            if is_persrm:
+                raise TrainingError(
+                    f"Not ready to train PersRM. Have {stats.get('total_examples', 0)} examples, "
+                    f"need {stats.get('min_samples_required', 10)}."
+                )
+            else:
+                raise TrainingError(
+                    f"Not ready to train. Have {stats.get('training_examples', 0)} examples, "
+                    f"need {settings.min_samples_for_training}. "
+                    f"Quality ratio: {stats.get('current_quality_ratio', 0):.2f}"
+                )
     
     # Step 1: Generate fresh versioned datasets
-    logger.info("Generating training datasets...")
+    logger.info(f"Generating {training_type} training datasets...")
     try:
-        dataset_stats = generate_training_dataset(
-            min_score=min_score,
-            include_unrated=True,
-            eval_ratio=0.1,
-            use_versioning=True,
-        )
+        if is_persrm:
+            from ChatOS.training.persrm_data_pipeline import generate_persrm_dataset
+            dataset_stats = generate_persrm_dataset(
+                include_feedback=True,
+                eval_ratio=0.1,
+                use_versioning=True,
+            )
+        else:
+            dataset_stats = generate_training_dataset(
+                min_score=min_score,
+                include_unrated=True,
+                eval_ratio=0.1,
+                use_versioning=True,
+            )
     except Exception as e:
         raise TrainingError(f"Failed to generate datasets: {e}")
     
-    if dataset_stats.total_examples < 1:
+    example_count = getattr(dataset_stats, 'total_examples', 0) or getattr(dataset_stats, 'train_count', 0)
+    if example_count < 1:
         raise TrainingError("No training examples generated")
+    
+    # Create description
+    type_label = "PersRM" if is_persrm else "ChatOS"
+    default_description = f"{type_label} {preset_name} training - v{dataset_stats.version} - {dataset_stats.train_count} samples"
     
     # Step 2: Create job specification from preset
     job_spec = TrainingJobSpec.from_preset(
@@ -183,10 +261,11 @@ def start_training_job(
         eval_path=dataset_stats.eval_path,
         dataset_version=dataset_stats.version,
         dataset_sample_count=dataset_stats.train_count,
-        description=description or f"ChatOS {preset_name} training - v{dataset_stats.version} - {dataset_stats.train_count} samples",
+        description=description or default_description,
+        training_type=training_type,  # Pass training type to job spec
     )
     
-    logger.info(f"Created job spec: {job_spec.id} (preset={preset_name}, model={model_key}, dataset_v{dataset_stats.version})")
+    logger.info(f"Created job spec: {job_spec.id} (type={training_type}, preset={preset_name}, model={model_key}, dataset_v{dataset_stats.version})")
     
     # Step 3: Write temporary config
     try:
@@ -206,16 +285,30 @@ def start_training_job(
     logger.info(f"Started training process with PID: {pid}")
     
     # Step 5: Save job record with full dataset stats
-    dataset_stats_dict = {
-        "version": dataset_stats.version,
-        "train_count": dataset_stats.train_count,
-        "eval_count": dataset_stats.eval_count,
-        "total_conversations": dataset_stats.total_conversations,
-        "positive_examples": dataset_stats.positive_examples,
-        "neutral_examples": dataset_stats.neutral_examples,
-        "negative_excluded": dataset_stats.negative_excluded,
-        "created_at": dataset_stats.created_at,
-    }
+    if is_persrm:
+        dataset_stats_dict = {
+            "version": dataset_stats.version,
+            "train_count": dataset_stats.train_count,
+            "eval_count": dataset_stats.eval_count,
+            "total_examples": dataset_stats.total_examples,
+            "reasoning_examples": dataset_stats.reasoning_examples,
+            "instruction_examples": dataset_stats.instruction_examples,
+            "feedback_examples": dataset_stats.feedback_examples,
+            "created_at": dataset_stats.created_at,
+            "training_type": "persrm",
+        }
+    else:
+        dataset_stats_dict = {
+            "version": dataset_stats.version,
+            "train_count": dataset_stats.train_count,
+            "eval_count": dataset_stats.eval_count,
+            "total_conversations": dataset_stats.total_conversations,
+            "positive_examples": dataset_stats.positive_examples,
+            "neutral_examples": dataset_stats.neutral_examples,
+            "negative_excluded": dataset_stats.negative_excluded,
+            "created_at": dataset_stats.created_at,
+            "training_type": "chatos",
+        }
     
     job = create_job(
         job_spec=job_spec,
@@ -240,9 +333,12 @@ def get_available_models() -> Dict[str, Any]:
     return list_models()
 
 
-def can_start_training() -> Tuple[bool, str]:
+def can_start_training(training_type: str = "chatos") -> Tuple[bool, str]:
     """
     Check if training can be started.
+    
+    Args:
+        training_type: "chatos" or "persrm"
     
     Returns:
         Tuple of (can_start, reason)
@@ -254,11 +350,26 @@ def can_start_training() -> Tuple[bool, str]:
     if running:
         return False, f"Job already running: {running[0]['id']}"
     
-    stats = get_training_stats()
+    stats = get_training_stats(training_type)
     if not stats.get("ready_to_train", False):
-        examples = stats.get("training_examples", 0)
-        required = settings.min_samples_for_training
-        return False, f"Need more data: {examples}/{required} examples"
+        is_persrm = training_type == TrainingType.PERSRM or training_type == "persrm"
+        if is_persrm:
+            examples = stats.get("total_examples", 0)
+            required = stats.get("min_samples_required", 10)
+            if examples < required:
+                return False, f"Need more data: {examples}/{required} examples"
+            return False, "Ready to train (force start available)"
+        else:
+            examples = stats.get("training_examples", 0)
+            required = settings.min_samples_for_training
+            quality_ratio = stats.get("current_quality_ratio", 0)
+            min_quality = stats.get("min_quality_ratio", settings.min_quality_ratio)
+            
+            if examples < required:
+                return False, f"Need more data: {examples}/{required} examples"
+            elif quality_ratio < min_quality:
+                return False, f"Quality ratio too low: {quality_ratio*100:.1f}% < {min_quality*100:.0f}% (use force start)"
+            return False, "Not ready (use force start)"
     
     return True, "Ready to train"
 
@@ -302,4 +413,3 @@ def get_job_summary(job_id: str) -> Optional[Dict[str, Any]]:
         "latest_metrics": job.get("latest_metrics"),
         "error_snippet": job.get("error_snippet"),
     }
-
