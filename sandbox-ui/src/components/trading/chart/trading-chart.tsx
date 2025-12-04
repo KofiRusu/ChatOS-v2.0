@@ -65,8 +65,8 @@ export function TradingChart({ symbol }: TradingChartProps) {
     }
   }, [symbol])
 
-  // Fallback to mock data if CCXT fails
-  const chartCandles = candles.length > 0 ? candles : generateMockCandles(symbol)
+  // Use real CCXT data - no mock fallback for accurate charting
+  const chartCandles = candles
 
   // Calculate Ichimoku indicators
   const ichimokuData = useMemo(() => {
@@ -412,7 +412,22 @@ export function TradingChart({ symbol }: TradingChartProps) {
       {/* Error message */}
       {error && (
         <div className="absolute top-12 left-2 bg-red-500/20 border border-red-500/30 rounded-lg px-3 py-1.5 text-xs text-red-400 z-10">
-          Using mock data: {error}
+          CCXT Error: {error}
+        </div>
+      )}
+
+      {/* No data message */}
+      {!loading && chartCandles.length === 0 && !error && (
+        <div className="absolute inset-0 bg-[#0a0a0f]/80 flex items-center justify-center z-10">
+          <div className="text-center text-gray-400">
+            <p className="text-sm mb-2">No chart data available</p>
+            <button 
+              onClick={() => refetchCandles()}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-xs text-white"
+            >
+              Retry
+            </button>
+          </div>
         </div>
       )}
 

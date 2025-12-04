@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useTradingStore } from '@/stores/trading-store'
+import { useMarketContextForAI } from '@/lib/trading/market-context'
+import { useRealtime } from '@/lib/trading/realtime-ws'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -16,7 +18,8 @@ import {
   AlertTriangle,
   CheckCircle,
   X,
-  Zap
+  Zap,
+  RefreshCw
 } from 'lucide-react'
 
 interface Message {
@@ -48,6 +51,14 @@ const quickActions = [
 
 export function TradingAssistant() {
   const { currentSymbol, positions, portfolio, addPosition, mode } = useTradingStore()
+  
+  // Market context from aggr.trade and other indexes for AI analysis
+  const { symbolContext, fullContext, refresh: refreshContext, isLoading: contextLoading } = useMarketContextForAI(currentSymbol)
+  
+  // Real-time data from WebSocket for live price
+  const { getPrice, connected } = useRealtime()
+  const realtimePrice = getPrice(currentSymbol)
+  
   const [messages, setMessages] = useState<Message[]>([
     {
       id: '1',
@@ -59,6 +70,11 @@ export function TradingAssistant() {
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  
+  // Fetch market context on mount and when symbol changes
+  useEffect(() => {
+    refreshContext()
+  }, [currentSymbol])
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -103,7 +119,8 @@ export function TradingAssistant() {
     const tradeAction = parseTradeIntent(userMessage)
     
     if (tradeAction) {
-      const price = 67500 // Mock price, would come from market data
+      // Use REAL price from WebSocket or fallback
+      const price = realtimePrice?.price || 67500
       const accountValue = portfolio.totalValue
       const riskAmount = accountValue * (tradeAction.riskPercent! / 100)
       const slDistance = price * 0.02 // 2% SL
@@ -129,21 +146,23 @@ export function TradingAssistant() {
       }
     }
 
-    // Analysis responses
+    // Analysis responses - USE REAL MARKET CONTEXT FROM AGGR.TRADE & INDEXES
     const lowerMessage = userMessage.toLowerCase()
     
     if (lowerMessage.includes('analyz') || lowerMessage.includes('trend') || lowerMessage.includes('market')) {
+      // Use real data from market context
+      const ctx = symbolContext
+      const currentPrice = realtimePrice?.price || 0
+      const change24h = realtimePrice?.change24h || 0
+      
       return {
         content: `**${currentSymbol} Market Analysis** 📊\n\n` +
-          `**Trend:** Bullish on higher timeframes, consolidating on 4H\n\n` +
-          `**Key Levels:**\n` +
-          `- Resistance: $68,500 / $70,000\n` +
-          `- Support: $65,000 / $62,500\n\n` +
-          `**Indicators:**\n` +
-          `- RSI(14): 58 (neutral)\n` +
-          `- MACD: Bullish crossover forming\n` +
-          `- 200 EMA: Price above, bullish\n\n` +
-          `**Suggestion:** Look for long entries on pullbacks to $65-66k zone with invalidation below $64k.`,
+          `**Live Price:** $${currentPrice.toLocaleString()} (${change24h >= 0 ? '+' : ''}${change24h.toFixed(2)}%)\n\n` +
+          `**Market Sentiment:** ${ctx.sentiment}\n\n` +
+          `**🐋 Whale Activity:**\n${ctx.whaleActivity}\n\n` +
+          `**💀 Liquidations:**\n${ctx.liquidations}\n\n` +
+          `**📈 Order Flow:**\n${ctx.orderFlow}\n\n` +
+          `**💡 Recommendation:**\n${ctx.recommendation}`,
         action: { type: 'analysis' },
       }
     }
@@ -235,13 +254,14 @@ export function TradingAssistant() {
 
     const action = message.action
     
-    // Add position
+    // Add position with REAL price
+    const entryPrice = realtimePrice?.price || 67500
     addPosition({
       symbol: action.symbol!,
       side: action.side!,
       size: action.size!,
-      entryPrice: 67500, // Mock price
-      currentPrice: 67500,
+      entryPrice,
+      currentPrice: entryPrice,
       pnl: 0,
       pnlPercent: 0,
       leverage: 1,
@@ -382,7 +402,7 @@ export function TradingAssistant() {
 
       {/* Quick Actions */}
       <div className="px-3 pb-2">
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1 items-center">
           {quickActions.map((action, i) => (
             <button
               key={i}
@@ -392,6 +412,19 @@ export function TradingAssistant() {
               {action.label}
             </button>
           ))}
+          <button
+            onClick={refreshContext}
+            disabled={contextLoading}
+            className="text-[10px] px-2 py-1 bg-purple-600/20 hover:bg-purple-600/30 rounded-full text-purple-400 hover:text-purple-300 transition-colors flex items-center gap-1"
+          >
+            <RefreshCw className={`w-3 h-3 ${contextLoading ? 'animate-spin' : ''}`} />
+            {contextLoading ? 'Loading...' : 'Refresh data'}
+          </button>
+        </div>
+        {/* Connection status */}
+        <div className="flex items-center gap-1 mt-1 text-[9px] text-gray-500">
+          <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
+          {connected ? 'Live data connected' : 'Connecting to market data...'}
         </div>
       </div>
 
