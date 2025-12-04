@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTradingStore } from '@/stores/trading-store'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { TradingAssistant } from './ai/trading-assistant'
+import { TradeFeed } from './realtime/trade-feed'
+import { useRealtime } from '@/lib/trading/realtime-ws'
 import { 
   Bot, 
   Newspaper, 
@@ -17,11 +19,13 @@ import {
   TrendingDown,
   Minus,
   ExternalLink,
-  Zap
+  Zap,
+  Radio
 } from 'lucide-react'
 
 export function RightPanel() {
   const { rightPanelTab, setRightPanelTab, news, currentSymbol } = useTradingStore()
+  const { connected, trades, whaleTrades, stats } = useRealtime()
 
   // Filter news for current symbol
   const filteredNews = news.filter(n => 
@@ -31,13 +35,23 @@ export function RightPanel() {
   return (
     <div className="w-80 border-l border-gray-800 bg-[#0d0d14] flex flex-col">
       <Tabs value={rightPanelTab} onValueChange={(v) => setRightPanelTab(v as any)} className="flex-1 flex flex-col">
-        <TabsList className="w-full justify-start gap-0.5 px-2 pt-2 bg-transparent rounded-none h-auto pb-2 border-b border-gray-800">
+        <TabsList className="w-full justify-start gap-0.5 px-2 pt-2 bg-transparent rounded-none h-auto pb-2 border-b border-gray-800 flex-wrap">
+          <TabsTrigger 
+            value="feed"
+            className="data-[state=active]:bg-green-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs relative"
+          >
+            <Radio className={`w-3.5 h-3.5 mr-1 ${connected ? 'animate-pulse text-green-400' : ''}`} />
+            Live
+            {connected && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full animate-ping" />
+            )}
+          </TabsTrigger>
           <TabsTrigger 
             value="assistant"
             className="data-[state=active]:bg-purple-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs"
           >
             <Bot className="w-3.5 h-3.5 mr-1" />
-            Assistant
+            AI
           </TabsTrigger>
           <TabsTrigger 
             value="news"
@@ -61,6 +75,11 @@ export function RightPanel() {
             Alerts
           </TabsTrigger>
         </TabsList>
+
+        {/* Live Feed Tab */}
+        <TabsContent value="feed" className="flex-1 mt-0 overflow-hidden">
+          <TradeFeed symbol={currentSymbol} showLiquidations maxItems={100} />
+        </TabsContent>
 
         {/* AI Assistant Tab */}
         <TabsContent value="assistant" className="flex-1 mt-0 overflow-hidden">

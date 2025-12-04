@@ -1,13 +1,32 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { useTradingStore } from '@/stores/trading-store'
 import { useMarketData } from '@/hooks/use-market-data'
-import { Loader2, Wifi, WifiOff, RefreshCw } from 'lucide-react'
+import { useRealtime, realtimeWS } from '@/lib/trading/realtime-ws'
+import { 
+  calculateIchimoku, 
+  calculateFutureCloud, 
+  analyzeIchimokuSignals,
+  IchimokuData,
+  DEFAULT_ICHIMOKU_CONFIG 
+} from '@/lib/trading/indicators/ichimoku'
+import { Loader2, Wifi, WifiOff, RefreshCw, CloudRain, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface TradingChartProps {
   symbol: string
+}
+
+// Ichimoku colors
+const ICHIMOKU_COLORS = {
+  tenkanSen: '#2563eb',    // Blue - Conversion Line
+  kijunSen: '#dc2626',     // Red - Base Line
+  senkouSpanA: '#22c55e',  // Green - Leading Span A
+  senkouSpanB: '#ef4444',  // Red - Leading Span B
+  cloudBullish: 'rgba(34, 197, 94, 0.15)',   // Green cloud
+  cloudBearish: 'rgba(239, 68, 68, 0.15)',   // Red cloud
+  chikouSpan: '#a855f7',   // Purple - Lagging Span
 }
 
 export function TradingChart({ symbol }: TradingChartProps) {
@@ -17,6 +36,11 @@ export function TradingChart({ symbol }: TradingChartProps) {
   const [dimensions, setDimensions] = useState({ width: 800, height: 400 })
   const [timeframe, setTimeframe] = useState('1h')
   const [useLiveData, setUseLiveData] = useState(true)
+  const [showIchimoku, setShowIchimoku] = useState(true)
+
+  // Real-time data
+  const { connected, trades, getPrice } = useRealtime()
+  const realtimePrice = getPrice(symbol)
 
   // Use CCXT data hook
   const { 
@@ -33,8 +57,34 @@ export function TradingChart({ symbol }: TradingChartProps) {
     enableLiveUpdates: useLiveData,
   })
 
+  // Connect to WebSocket on mount
+  useEffect(() => {
+    realtimeWS.connect([symbol.replace('/', '').toLowerCase()])
+    return () => {
+      // Don't disconnect on unmount to keep other components connected
+    }
+  }, [symbol])
+
   // Fallback to mock data if CCXT fails
   const chartCandles = candles.length > 0 ? candles : generateMockCandles(symbol)
+
+  // Calculate Ichimoku indicators
+  const ichimokuData = useMemo(() => {
+    if (!showIchimoku || chartCandles.length < 52) return []
+    return calculateIchimoku(chartCandles, DEFAULT_ICHIMOKU_CONFIG)
+  }, [chartCandles, showIchimoku])
+
+  // Calculate future cloud projection
+  const futureCloud = useMemo(() => {
+    if (!showIchimoku || chartCandles.length < 52) return []
+    return calculateFutureCloud(chartCandles, DEFAULT_ICHIMOKU_CONFIG)
+  }, [chartCandles, showIchimoku])
+
+  // Analyze Ichimoku signals
+  const ichimokuSignal = useMemo(() => {
+    if (!showIchimoku || ichimokuData.length === 0) return null
+    return analyzeIchimokuSignals(chartCandles, ichimokuData)
+  }, [chartCandles, ichimokuData, showIchimoku])
 
   // Handle resize
   useEffect(() => {
@@ -72,10 +122,23 @@ export function TradingChart({ symbol }: TradingChartProps) {
     ctx.fillStyle = '#0a0a0f'
     ctx.fillRect(0, 0, width, height)
 
-    // Calculate price range
-    const prices = chartCandles.flatMap(c => [c.high, c.low])
-    const minPrice = Math.min(...prices)
-    const maxPrice = Math.max(...prices)
+    // Calculate price range (include Ichimoku values)
+    const allPrices = chartCandles.flatMap(c => [c.high, c.low])
+    if (showIchimoku && ichimokuData.length > 0) {
+      ichimokuData.forEach(ichi => {
+        if (ichi.cloudTop) allPrices.push(ichi.cloudTop)
+        if (ichi.cloudBottom) allPrices.push(ichi.cloudBottom)
+        if (ichi.tenkanSen) allPrices.push(ichi.tenkanSen)
+        if (ichi.kijunSen) allPrices.push(ichi.kijunSen)
+      })
+      futureCloud.forEach(fc => {
+        if (fc.senkouSpanA) allPrices.push(fc.senkouSpanA)
+        if (fc.senkouSpanB) allPrices.push(fc.senkouSpanB)
+      })
+    }
+
+    const minPrice = Math.min(...allPrices.filter(p => p > 0))
+    const maxPrice = Math.max(...allPrices)
     const priceRange = maxPrice - minPrice
     const padding = priceRange * 0.1
 
@@ -88,8 +151,18 @@ export function TradingChart({ symbol }: TradingChartProps) {
     const chartWidth = width - chartPadding.left - chartPadding.right
     const chartHeight = height - chartPadding.top - chartPadding.bottom
 
-    const candleWidth = Math.max(chartWidth / chartCandles.length * 0.7, 2)
-    const candleSpacing = chartWidth / chartCandles.length
+    // Account for future cloud projection
+    const totalBars = chartCandles.length + (showIchimoku ? 26 : 0)
+    const candleSpacing = chartWidth / totalBars
+    const candleWidth = Math.max(candleSpacing * 0.7, 2)
+
+    // Helper to convert price to Y
+    const priceToY = (price: number) => 
+      chartPadding.top + ((chartMaxPrice - price) / chartPriceRange) * chartHeight
+
+    // Helper to convert index to X
+    const indexToX = (index: number) =>
+      chartPadding.left + index * candleSpacing + candleSpacing / 2
 
     // Draw grid
     ctx.strokeStyle = '#1a1a24'
@@ -112,16 +185,111 @@ export function TradingChart({ symbol }: TradingChartProps) {
       ctx.fillText(`$${price.toFixed(2)}`, width - chartPadding.right + 8, y + 4)
     }
 
+    // Draw Ichimoku Cloud (behind candles)
+    if (showIchimoku && ichimokuData.length > 0) {
+      // Draw future cloud projection
+      if (futureCloud.length > 0) {
+        ctx.globalAlpha = 0.5
+        for (let i = 0; i < futureCloud.length; i++) {
+          const fc = futureCloud[i]
+          if (fc.senkouSpanA === null || fc.senkouSpanB === null) continue
+
+          const x = indexToX(chartCandles.length + i)
+          const yA = priceToY(fc.senkouSpanA)
+          const yB = priceToY(fc.senkouSpanB)
+
+          ctx.fillStyle = fc.cloudColor === 'bullish' 
+            ? ICHIMOKU_COLORS.cloudBullish 
+            : ICHIMOKU_COLORS.cloudBearish
+          ctx.fillRect(x - candleSpacing / 2, Math.min(yA, yB), candleSpacing, Math.abs(yB - yA) || 1)
+        }
+        ctx.globalAlpha = 1
+      }
+
+      // Draw historical cloud
+      for (let i = 0; i < ichimokuData.length; i++) {
+        const ichi = ichimokuData[i]
+        if (ichi.cloudTop === null || ichi.cloudBottom === null) continue
+
+        const x = indexToX(i)
+        const yTop = priceToY(ichi.cloudTop)
+        const yBottom = priceToY(ichi.cloudBottom)
+
+        ctx.fillStyle = ichi.cloudColor === 'bullish' 
+          ? ICHIMOKU_COLORS.cloudBullish 
+          : ICHIMOKU_COLORS.cloudBearish
+        ctx.fillRect(x - candleSpacing / 2, yTop, candleSpacing, yBottom - yTop || 1)
+      }
+
+      // Draw Tenkan-sen (Conversion Line)
+      ctx.strokeStyle = ICHIMOKU_COLORS.tenkanSen
+      ctx.lineWidth = 1.5
+      ctx.beginPath()
+      let started = false
+      for (let i = 0; i < ichimokuData.length; i++) {
+        const val = ichimokuData[i].tenkanSen
+        if (val === null) continue
+        const x = indexToX(i)
+        const y = priceToY(val)
+        if (!started) {
+          ctx.moveTo(x, y)
+          started = true
+        } else {
+          ctx.lineTo(x, y)
+        }
+      }
+      ctx.stroke()
+
+      // Draw Kijun-sen (Base Line)
+      ctx.strokeStyle = ICHIMOKU_COLORS.kijunSen
+      ctx.beginPath()
+      started = false
+      for (let i = 0; i < ichimokuData.length; i++) {
+        const val = ichimokuData[i].kijunSen
+        if (val === null) continue
+        const x = indexToX(i)
+        const y = priceToY(val)
+        if (!started) {
+          ctx.moveTo(x, y)
+          started = true
+        } else {
+          ctx.lineTo(x, y)
+        }
+      }
+      ctx.stroke()
+
+      // Draw Chikou Span (Lagging Span) - needs to be shifted back
+      ctx.strokeStyle = ICHIMOKU_COLORS.chikouSpan
+      ctx.lineWidth = 1
+      ctx.setLineDash([3, 2])
+      ctx.beginPath()
+      started = false
+      for (let i = 0; i < chartCandles.length - 26; i++) {
+        const close = chartCandles[i + 26]?.close
+        if (close === undefined) continue
+        const x = indexToX(i)
+        const y = priceToY(close)
+        if (!started) {
+          ctx.moveTo(x, y)
+          started = true
+        } else {
+          ctx.lineTo(x, y)
+        }
+      }
+      ctx.stroke()
+      ctx.setLineDash([])
+    }
+
     // Draw candles
     chartCandles.forEach((candle, i) => {
-      const x = chartPadding.left + i * candleSpacing + candleSpacing / 2
+      const x = indexToX(i)
       const isGreen = candle.close >= candle.open
 
       // Calculate y positions
-      const yHigh = chartPadding.top + ((chartMaxPrice - candle.high) / chartPriceRange) * chartHeight
-      const yLow = chartPadding.top + ((chartMaxPrice - candle.low) / chartPriceRange) * chartHeight
-      const yOpen = chartPadding.top + ((chartMaxPrice - candle.open) / chartPriceRange) * chartHeight
-      const yClose = chartPadding.top + ((chartMaxPrice - candle.close) / chartPriceRange) * chartHeight
+      const yHigh = priceToY(candle.high)
+      const yLow = priceToY(candle.low)
+      const yOpen = priceToY(candle.open)
+      const yClose = priceToY(candle.close)
 
       // Wick
       ctx.strokeStyle = isGreen ? '#22c55e' : '#ef4444'
@@ -142,7 +310,7 @@ export function TradingChart({ symbol }: TradingChartProps) {
     const currentPosition = positions.find(p => p.symbol === symbol)
     if (currentPosition) {
       // Entry line
-      const yEntry = chartPadding.top + ((chartMaxPrice - currentPosition.entryPrice) / chartPriceRange) * chartHeight
+      const yEntry = priceToY(currentPosition.entryPrice)
       if (yEntry > chartPadding.top && yEntry < height - chartPadding.bottom) {
         ctx.strokeStyle = '#8b5cf6'
         ctx.setLineDash([5, 5])
@@ -164,7 +332,7 @@ export function TradingChart({ symbol }: TradingChartProps) {
 
       // Stop loss line
       if (currentPosition.stopLoss) {
-        const ySL = chartPadding.top + ((chartMaxPrice - currentPosition.stopLoss) / chartPriceRange) * chartHeight
+        const ySL = priceToY(currentPosition.stopLoss)
         if (ySL > chartPadding.top && ySL < height - chartPadding.bottom) {
           ctx.strokeStyle = '#ef4444'
           ctx.setLineDash([3, 3])
@@ -183,7 +351,7 @@ export function TradingChart({ symbol }: TradingChartProps) {
 
       // Take profit line
       if (currentPosition.takeProfit) {
-        const yTP = chartPadding.top + ((chartMaxPrice - currentPosition.takeProfit) / chartPriceRange) * chartHeight
+        const yTP = priceToY(currentPosition.takeProfit)
         if (yTP > chartPadding.top && yTP < height - chartPadding.bottom) {
           ctx.strokeStyle = '#22c55e'
           ctx.setLineDash([3, 3])
@@ -201,12 +369,12 @@ export function TradingChart({ symbol }: TradingChartProps) {
       }
     }
 
-    // Current price line (from ticker or last candle)
-    const currentPrice = ticker?.last || chartCandles[chartCandles.length - 1]?.close || 0
-    const yCurrentPrice = chartPadding.top + ((chartMaxPrice - currentPrice) / chartPriceRange) * chartHeight
+    // Current price line (use real-time price if available)
+    const currentPrice = realtimePrice?.price || ticker?.last || chartCandles[chartCandles.length - 1]?.close || 0
+    const yCurrentPrice = priceToY(currentPrice)
     
     if (yCurrentPrice > chartPadding.top && yCurrentPrice < height - chartPadding.bottom) {
-      ctx.strokeStyle = '#f59e0b'
+      ctx.strokeStyle = connected ? '#00ff88' : '#f59e0b'
       ctx.lineWidth = 1
       ctx.setLineDash([2, 2])
       ctx.beginPath()
@@ -216,7 +384,7 @@ export function TradingChart({ symbol }: TradingChartProps) {
       ctx.setLineDash([])
 
       // Current price label
-      ctx.fillStyle = '#f59e0b'
+      ctx.fillStyle = connected ? '#00ff88' : '#f59e0b'
       ctx.fillRect(width - chartPadding.right, yCurrentPrice - 10, 80, 20)
       ctx.fillStyle = '#000'
       ctx.font = 'bold 11px monospace'
@@ -224,7 +392,10 @@ export function TradingChart({ symbol }: TradingChartProps) {
       ctx.fillText(`$${currentPrice.toFixed(2)}`, width - chartPadding.right + 4, yCurrentPrice + 4)
     }
 
-  }, [chartCandles, dimensions, positions, symbol, ticker])
+  }, [chartCandles, dimensions, positions, symbol, ticker, ichimokuData, futureCloud, showIchimoku, connected, realtimePrice])
+
+  // Timeframe buttons
+  const timeframes = ['1m', '5m', '15m', '1h', '4h', '1d']
 
   return (
     <div ref={containerRef} className="w-full h-full relative">
@@ -240,27 +411,86 @@ export function TradingChart({ symbol }: TradingChartProps) {
 
       {/* Error message */}
       {error && (
-        <div className="absolute top-2 left-2 bg-red-500/20 border border-red-500/30 rounded-lg px-3 py-1.5 text-xs text-red-400 z-10">
+        <div className="absolute top-12 left-2 bg-red-500/20 border border-red-500/30 rounded-lg px-3 py-1.5 text-xs text-red-400 z-10">
           Using mock data: {error}
         </div>
       )}
+
+      {/* Timeframe selector */}
+      <div className="absolute top-2 left-2 flex gap-1 z-10">
+        {timeframes.map((tf) => (
+          <button
+            key={tf}
+            onClick={() => setTimeframe(tf)}
+            className={`px-2 py-1 text-xs rounded ${
+              timeframe === tf
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            {tf}
+          </button>
+        ))}
+      </div>
+
+      {/* Ichimoku toggle and signal */}
+      <div className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-3 z-10">
+        <button
+          onClick={() => setShowIchimoku(!showIchimoku)}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium transition-colors ${
+            showIchimoku
+              ? 'bg-purple-500/30 text-purple-300 border border-purple-500/50'
+              : 'bg-gray-800 text-gray-500 border border-gray-700'
+          }`}
+        >
+          <CloudRain className="w-3.5 h-3.5" />
+          Ichimoku
+        </button>
+
+        {showIchimoku && ichimokuSignal && (
+          <div className={`flex items-center gap-1.5 px-3 py-1 rounded text-xs font-medium ${
+            ichimokuSignal.type === 'strong_buy' || ichimokuSignal.type === 'buy'
+              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+              : ichimokuSignal.type === 'strong_sell' || ichimokuSignal.type === 'sell'
+              ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+              : 'bg-gray-800 text-gray-400 border border-gray-700'
+          }`}>
+            {ichimokuSignal.type.includes('buy') ? (
+              <TrendingUp className="w-3.5 h-3.5" />
+            ) : ichimokuSignal.type.includes('sell') ? (
+              <TrendingDown className="w-3.5 h-3.5" />
+            ) : (
+              <Minus className="w-3.5 h-3.5" />
+            )}
+            {ichimokuSignal.type.replace('_', ' ').toUpperCase()}
+            <span className="text-[10px] opacity-70">({ichimokuSignal.confidence}%)</span>
+          </div>
+        )}
+      </div>
 
       {/* Connection status */}
       <div className="absolute top-2 right-2 flex items-center gap-2 z-10">
         <button
           onClick={() => setUseLiveData(!useLiveData)}
           className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs ${
-            useLiveData && !error
-              ? 'bg-green-500/20 text-green-400'
+            connected
+              ? 'bg-green-500/20 text-green-400 animate-pulse'
+              : useLiveData && !error
+              ? 'bg-yellow-500/20 text-yellow-400'
               : 'bg-gray-800 text-gray-500'
           }`}
         >
-          {useLiveData && !error ? (
-            <Wifi className="w-3 h-3" />
+          {connected ? (
+            <>
+              <Wifi className="w-3 h-3" />
+              <span className="font-mono">{realtimePrice?.price?.toFixed(2) || 'LIVE'}</span>
+            </>
           ) : (
-            <WifiOff className="w-3 h-3" />
+            <>
+              <WifiOff className="w-3 h-3" />
+              {useLiveData ? 'Connecting...' : 'Paused'}
+            </>
           )}
-          {useLiveData ? 'Live' : 'Paused'}
         </button>
         <Button
           size="icon"
@@ -272,10 +502,41 @@ export function TradingChart({ symbol }: TradingChartProps) {
         </Button>
       </div>
 
+      {/* Ichimoku Legend */}
+      {showIchimoku && (
+        <div className="absolute bottom-10 left-2 flex flex-wrap gap-x-3 gap-y-1 text-[10px] z-10 bg-black/50 p-1.5 rounded">
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-0.5" style={{ backgroundColor: ICHIMOKU_COLORS.tenkanSen }} />
+            <span className="text-gray-400">Tenkan</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-0.5" style={{ backgroundColor: ICHIMOKU_COLORS.kijunSen }} />
+            <span className="text-gray-400">Kijun</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-0.5" style={{ backgroundColor: ICHIMOKU_COLORS.chikouSpan }} />
+            <span className="text-gray-400">Chikou</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-2 rounded-sm" style={{ backgroundColor: ICHIMOKU_COLORS.cloudBullish.replace('0.15', '0.5') }} />
+            <span className="text-gray-400">Cloud</span>
+          </span>
+        </div>
+      )}
+
       {/* Last update */}
       {lastUpdate && (
         <div className="absolute bottom-2 left-2 text-[10px] text-gray-600 z-10">
           Updated: {new Date(lastUpdate).toLocaleTimeString()}
+        </div>
+      )}
+
+      {/* Real-time change indicator */}
+      {realtimePrice && (
+        <div className={`absolute bottom-2 right-2 text-[10px] z-10 ${
+          realtimePrice.change24h >= 0 ? 'text-green-400' : 'text-red-400'
+        }`}>
+          24h: {realtimePrice.change24h >= 0 ? '+' : ''}{realtimePrice.change24h.toFixed(2)}%
         </div>
       )}
 
