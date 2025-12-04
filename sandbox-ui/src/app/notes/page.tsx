@@ -17,7 +17,14 @@ import {
   ListTodo,
   ArrowLeft,
   Sparkles,
+  MessageSquare,
+  Mic,
+  Code,
+  TerminalSquare,
+  TrendingUp,
+  Home,
 } from "lucide-react"
+import Link from "next/link"
 import {
   listNotes,
   createNote,
@@ -198,6 +205,30 @@ export default function NotesPage() {
             isLoading={isLoading}
           />
         </div>
+
+        {/* Navigation */}
+        <nav className="p-2 border-t border-[var(--border-color)] space-y-1">
+          <Link href="/" className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors">
+            <MessageSquare className="h-4 w-4" />
+            <span>Chat</span>
+          </Link>
+          <Link href="/notes" className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]">
+            <FileText className="h-4 w-4" />
+            <span>Notes</span>
+          </Link>
+          <Link href="/diary" className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors">
+            <Mic className="h-4 w-4" />
+            <span>Diary</span>
+          </Link>
+          <Link href="/editor" className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors">
+            <Code className="h-4 w-4" />
+            <span>Editor</span>
+          </Link>
+          <Link href="/trading" className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors">
+            <TrendingUp className="h-4 w-4" />
+            <span>Trading</span>
+          </Link>
+        </nav>
       </aside>
 
       {/* Main Content */}

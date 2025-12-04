@@ -19,8 +19,11 @@ import {
   Zap,
   Eye,
   FileText,
-  Radio
+  Radio,
+  Home,
+  MessageSquare
 } from 'lucide-react'
+import Link from 'next/link'
 
 interface TradingHeaderProps {
   onConnectExchange: () => void
@@ -56,6 +59,13 @@ export function TradingHeader({ onConnectExchange }: TradingHeaderProps) {
 
   return (
     <header className="h-14 border-b border-gray-800 bg-[#0d0d14] flex items-center px-4 gap-4">
+      {/* Home Link */}
+      <Link href="/" className="flex items-center gap-2 text-gray-400 hover:text-white transition-colors">
+        <Home className="w-5 h-5" />
+      </Link>
+
+      <div className="w-px h-8 bg-gray-700" />
+
       {/* Logo & Title */}
       <div className="flex items-center gap-2">
         <Zap className="w-6 h-6 text-purple-500" />

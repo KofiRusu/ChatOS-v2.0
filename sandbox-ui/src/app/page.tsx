@@ -23,6 +23,7 @@ import {
   Square,
   RotateCcw,
   RefreshCw,
+  TrendingUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { 
@@ -61,6 +62,7 @@ const NAV_ITEMS = [
   { href: "/diary", label: "Diary", icon: Mic },
   { href: "/editor", label: "Editor", icon: Code2 },
   { href: "/sandbox", label: "VSCode", icon: Code2 },
+  { href: "/trading", label: "Trading", icon: TrendingUp },
 ]
 
 export default function ChatPage() {
