@@ -162,6 +162,10 @@ interface TradingState {
   connectExchange: (exchange: Exchange, apiKey: string, secret: string) => Promise<boolean>
   disconnectExchange: (accountId: string) => void
   
+  // Price updates from CCXT
+  updateMarketPrice: (symbol: string, price: number, change24h: number, volume24h?: number, high24h?: number, low24h?: number) => void
+  updateAllMarketPrices: (prices: { symbol: string; price: number; change24h: number; volume24h?: number; high24h?: number; low24h?: number }[]) => void
+  
   // Mock data
   initializeMockData: () => void
 }
@@ -183,47 +187,34 @@ const mockAccounts: ExchangeAccount[] = [
   },
 ]
 
+// Initial placeholder markets - prices will be updated from CCXT
 const mockMarkets: MarketSymbol[] = [
-  { symbol: 'BTCUSDT', baseAsset: 'BTC', quoteAsset: 'USDT', exchange: 'binance', price: 67500, change24h: 2.5, volume24h: 45000000000, high24h: 68200, low24h: 65800 },
-  { symbol: 'ETHUSDT', baseAsset: 'ETH', quoteAsset: 'USDT', exchange: 'binance', price: 3450, change24h: 1.8, volume24h: 18000000000, high24h: 3520, low24h: 3380 },
-  { symbol: 'SOLUSDT', baseAsset: 'SOL', quoteAsset: 'USDT', exchange: 'binance', price: 178, change24h: 4.2, volume24h: 3500000000, high24h: 185, low24h: 168 },
-  { symbol: 'BNBUSDT', baseAsset: 'BNB', quoteAsset: 'USDT', exchange: 'binance', price: 620, change24h: -0.8, volume24h: 1200000000, high24h: 635, low24h: 612 },
-  { symbol: 'XRPUSDT', baseAsset: 'XRP', quoteAsset: 'USDT', exchange: 'binance', price: 2.15, change24h: 3.1, volume24h: 2800000000, high24h: 2.22, low24h: 2.05 },
-  { symbol: 'ADAUSDT', baseAsset: 'ADA', quoteAsset: 'USDT', exchange: 'binance', price: 1.05, change24h: 1.2, volume24h: 890000000, high24h: 1.08, low24h: 1.02 },
+  { symbol: 'BTCUSDT', baseAsset: 'BTC', quoteAsset: 'USDT', exchange: 'binance', price: 0, change24h: 0, volume24h: 0, high24h: 0, low24h: 0 },
+  { symbol: 'ETHUSDT', baseAsset: 'ETH', quoteAsset: 'USDT', exchange: 'binance', price: 0, change24h: 0, volume24h: 0, high24h: 0, low24h: 0 },
+  { symbol: 'SOLUSDT', baseAsset: 'SOL', quoteAsset: 'USDT', exchange: 'binance', price: 0, change24h: 0, volume24h: 0, high24h: 0, low24h: 0 },
+  { symbol: 'BNBUSDT', baseAsset: 'BNB', quoteAsset: 'USDT', exchange: 'binance', price: 0, change24h: 0, volume24h: 0, high24h: 0, low24h: 0 },
+  { symbol: 'XRPUSDT', baseAsset: 'XRP', quoteAsset: 'USDT', exchange: 'binance', price: 0, change24h: 0, volume24h: 0, high24h: 0, low24h: 0 },
+  { symbol: 'ADAUSDT', baseAsset: 'ADA', quoteAsset: 'USDT', exchange: 'binance', price: 0, change24h: 0, volume24h: 0, high24h: 0, low24h: 0 },
 ]
 
+// Watchlist names - prices populated from CCXT
 const mockWatchlists = {
   favorites: [
-    { symbol: 'BTCUSDT', name: 'Bitcoin', price: 67500, change24h: 2.5 },
-    { symbol: 'ETHUSDT', name: 'Ethereum', price: 3450, change24h: 1.8 },
-    { symbol: 'SOLUSDT', name: 'Solana', price: 178, change24h: 4.2 },
+    { symbol: 'BTCUSDT', name: 'Bitcoin', price: 0, change24h: 0 },
+    { symbol: 'ETHUSDT', name: 'Ethereum', price: 0, change24h: 0 },
+    { symbol: 'SOLUSDT', name: 'Solana', price: 0, change24h: 0 },
   ],
   crypto: [
-    { symbol: 'BTCUSDT', name: 'Bitcoin', price: 67500, change24h: 2.5 },
-    { symbol: 'ETHUSDT', name: 'Ethereum', price: 3450, change24h: 1.8 },
-    { symbol: 'SOLUSDT', name: 'Solana', price: 178, change24h: 4.2 },
-    { symbol: 'BNBUSDT', name: 'BNB', price: 620, change24h: -0.8 },
-    { symbol: 'XRPUSDT', name: 'XRP', price: 2.15, change24h: 3.1 },
+    { symbol: 'BTCUSDT', name: 'Bitcoin', price: 0, change24h: 0 },
+    { symbol: 'ETHUSDT', name: 'Ethereum', price: 0, change24h: 0 },
+    { symbol: 'SOLUSDT', name: 'Solana', price: 0, change24h: 0 },
+    { symbol: 'BNBUSDT', name: 'BNB', price: 0, change24h: 0 },
+    { symbol: 'XRPUSDT', name: 'XRP', price: 0, change24h: 0 },
   ],
 }
 
-const mockPositions: Position[] = [
-  {
-    id: 'pos-1',
-    symbol: 'BTCUSDT',
-    side: 'long',
-    size: 0.5,
-    entryPrice: 65000,
-    currentPrice: 67500,
-    pnl: 1250,
-    pnlPercent: 3.85,
-    leverage: 1,
-    stopLoss: 62000,
-    takeProfit: 72000,
-    strategy: 'Manual',
-    openedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-  },
-]
+// Positions - current price updated from CCXT
+const mockPositions: Position[] = []
 
 const mockNews: NewsItem[] = [
   {
@@ -429,6 +420,78 @@ export const useTradingStore = create<TradingState>()(
           currentAccountId: state.currentAccountId === accountId
             ? state.accounts[0]?.id || null
             : state.currentAccountId,
+        }))
+      },
+
+      // Update single market price from CCXT
+      updateMarketPrice: (symbol, price, change24h, volume24h, high24h, low24h) => {
+        set((state) => ({
+          markets: state.markets.map((m) =>
+            m.symbol === symbol
+              ? { ...m, price, change24h, volume24h: volume24h ?? m.volume24h, high24h: high24h ?? m.high24h, low24h: low24h ?? m.low24h }
+              : m
+          ),
+          watchlists: Object.fromEntries(
+            Object.entries(state.watchlists).map(([key, items]) => [
+              key,
+              items.map((item) =>
+                item.symbol === symbol ? { ...item, price, change24h } : item
+              ),
+            ])
+          ),
+          // Also update position current prices
+          positions: state.positions.map((p) => {
+            if (p.symbol === symbol) {
+              const pnl = p.side === 'long'
+                ? (price - p.entryPrice) * p.size
+                : (p.entryPrice - price) * p.size
+              const pnlPercent = (pnl / (p.entryPrice * p.size)) * 100
+              return { ...p, currentPrice: price, pnl, pnlPercent }
+            }
+            return p
+          }),
+        }))
+      },
+
+      // Batch update all market prices
+      updateAllMarketPrices: (prices) => {
+        const priceMap = new Map(prices.map((p) => [p.symbol, p]))
+        set((state) => ({
+          markets: state.markets.map((m) => {
+            const update = priceMap.get(m.symbol)
+            if (update) {
+              return {
+                ...m,
+                price: update.price,
+                change24h: update.change24h,
+                volume24h: update.volume24h ?? m.volume24h,
+                high24h: update.high24h ?? m.high24h,
+                low24h: update.low24h ?? m.low24h,
+              }
+            }
+            return m
+          }),
+          watchlists: Object.fromEntries(
+            Object.entries(state.watchlists).map(([key, items]) => [
+              key,
+              items.map((item) => {
+                const update = priceMap.get(item.symbol)
+                return update ? { ...item, price: update.price, change24h: update.change24h } : item
+              }),
+            ])
+          ),
+          positions: state.positions.map((p) => {
+            const update = priceMap.get(p.symbol)
+            if (update) {
+              const price = update.price
+              const pnl = p.side === 'long'
+                ? (price - p.entryPrice) * p.size
+                : (p.entryPrice - price) * p.size
+              const pnlPercent = (pnl / (p.entryPrice * p.size)) * 100
+              return { ...p, currentPrice: price, pnl, pnlPercent }
+            }
+            return p
+          }),
         }))
       },
 

@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useTradingStore } from '@/stores/trading-store'
+import { useLivePrices } from '@/hooks/use-live-prices'
 import { TradingHeader } from '@/components/trading/trading-header'
 import { LeftPanel } from '@/components/trading/left-panel'
 import { CenterPanel } from '@/components/trading/center-panel'
@@ -11,17 +12,11 @@ import { ConnectExchangeModal } from '@/components/trading/connect-exchange-moda
 import { OnboardingCard } from '@/components/trading/onboarding-card'
 
 export default function TradingPage() {
-  const { accounts, initializeMockData, currentAccountId } = useTradingStore()
+  const { accounts, currentAccountId } = useTradingStore()
   const [showConnectModal, setShowConnectModal] = useState(false)
-  const [initialized, setInitialized] = useState(false)
 
-  useEffect(() => {
-    // Initialize mock data on first load
-    if (!initialized) {
-      initializeMockData()
-      setInitialized(true)
-    }
-  }, [initialized, initializeMockData])
+  // Initialize store and fetch live prices from CCXT
+  useLivePrices()
 
   const hasConnectedExchange = accounts.some(a => a.connected)
 

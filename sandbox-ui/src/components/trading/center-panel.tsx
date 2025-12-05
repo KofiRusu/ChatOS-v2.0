@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTradingStore } from '@/stores/trading-store'
 import { TradingChart } from './chart/trading-chart'
 import { OrderTicket } from './order-ticket/order-ticket'
@@ -150,14 +150,49 @@ export function CenterPanel() {
 }
 
 function RecentTrades({ symbol }: { symbol: string }) {
-  // Mock recent trades
-  const trades = Array.from({ length: 20 }, (_, i) => ({
-    id: i,
-    price: 67500 + (Math.random() - 0.5) * 200,
-    size: Math.random() * 2,
-    side: Math.random() > 0.5 ? 'buy' : 'sell',
-    time: new Date(Date.now() - i * 5000).toLocaleTimeString(),
-  }))
+  const [trades, setTrades] = useState<Array<{id: string; price: number; size: number; side: string; time: string}>>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    async function fetchTrades() {
+      try {
+        const params = new URLSearchParams({
+          action: 'trades',
+          exchange: 'binance',
+          symbol: symbol.replace('USDT', '/USDT'),
+        })
+        const response = await fetch(`/api/market?${params}`)
+        const data = await response.json()
+        
+        if (data.error) throw new Error(data.error)
+        
+        const formattedTrades = (data || []).slice(0, 20).map((t: any) => ({
+          id: t.id,
+          price: t.price,
+          size: t.amount,
+          side: t.side,
+          time: new Date(t.timestamp).toLocaleTimeString(),
+        }))
+        setTrades(formattedTrades)
+      } catch (err) {
+        console.error('Error fetching trades:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchTrades()
+    const interval = setInterval(fetchTrades, 3000)
+    return () => clearInterval(interval)
+  }, [symbol])
+
+  if (loading && trades.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center text-xs text-gray-500">
+        Loading trades...
+      </div>
+    )
+  }
 
   return (
     <div className="h-full overflow-auto">

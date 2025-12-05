@@ -190,6 +190,8 @@ interface WatchlistRowProps {
 }
 
 function WatchlistRow({ item, isActive, onClick }: WatchlistRowProps) {
+  const isLoading = item.price === 0
+  
   return (
     <button
       onClick={onClick}
@@ -209,10 +211,16 @@ function WatchlistRow({ item, isActive, onClick }: WatchlistRowProps) {
         </div>
       </div>
       <div className="text-right">
-        <div className="text-sm font-mono">${item.price.toLocaleString()}</div>
-        <div className={`text-[10px] ${item.change24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-          {item.change24h >= 0 ? '+' : ''}{item.change24h.toFixed(2)}%
-        </div>
+        {isLoading ? (
+          <div className="text-sm font-mono text-gray-500 animate-pulse">Loading...</div>
+        ) : (
+          <>
+            <div className="text-sm font-mono">${item.price.toLocaleString()}</div>
+            <div className={`text-[10px] ${item.change24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+              {item.change24h >= 0 ? '+' : ''}{item.change24h.toFixed(2)}%
+            </div>
+          </>
+        )}
       </div>
     </button>
   )
