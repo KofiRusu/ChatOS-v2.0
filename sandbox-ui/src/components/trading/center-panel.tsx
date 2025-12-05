@@ -75,7 +75,7 @@ export function CenterPanel() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="depth" className="flex-1 mt-0 overflow-hidden">
+            <TabsContent value="depth" className="flex-1 mt-0 min-h-0">
               <OrderBook symbol={currentSymbol} />
             </TabsContent>
 

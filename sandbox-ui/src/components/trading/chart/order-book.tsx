@@ -20,6 +20,9 @@ interface OrderBookData {
   timestamp: number
 }
 
+// Number of levels to show on each side (compact to fit in panel)
+const LEVELS_TO_SHOW = 6
+
 export function OrderBook({ symbol }: OrderBookProps) {
   const { markets } = useTradingStore()
   const [orderbook, setOrderbook] = useState<OrderBookData | null>(null)
@@ -46,18 +49,19 @@ export function OrderBook({ symbol }: OrderBookProps) {
       let askTotal = 0
       let bidTotal = 0
       
-      const asks = (data.asks || []).slice(0, 15).map((level: { price: number; size: number }) => {
+      // Take only the levels closest to the spread
+      const asks = (data.asks || []).slice(0, LEVELS_TO_SHOW).map((level: { price: number; size: number }) => {
         askTotal += level.size
         return { price: level.price, size: level.size, total: askTotal }
       })
       
-      const bids = (data.bids || []).slice(0, 15).map((level: { price: number; size: number }) => {
+      const bids = (data.bids || []).slice(0, LEVELS_TO_SHOW).map((level: { price: number; size: number }) => {
         bidTotal += level.size
         return { price: level.price, size: level.size, total: bidTotal }
       })
       
       setOrderbook({
-        asks: asks.reverse(), // Reverse so highest asks are at top
+        asks: asks.reverse(), // Reverse so lowest asks are at bottom (closest to spread)
         bids,
         timestamp: data.timestamp || Date.now(),
       })
@@ -105,7 +109,7 @@ export function OrderBook({ symbol }: OrderBookProps) {
 
   if (error && !orderbook) {
     return (
-      <div className="h-full flex items-center justify-center text-xs text-red-400">
+      <div className="h-full flex items-center justify-center text-xs text-red-400 p-4 text-center">
         {error}
       </div>
     )
@@ -114,46 +118,48 @@ export function OrderBook({ symbol }: OrderBookProps) {
   if (!orderbook) return null
 
   return (
-    <div className="h-full flex flex-col text-xs">
+    <div className="h-full flex flex-col text-[10px] overflow-hidden">
       {/* Header */}
-      <div className="flex justify-between px-3 py-2 text-gray-500 font-medium border-b border-gray-800">
-        <span>Price (USDT)</span>
-        <span>Size</span>
-        <span>Total</span>
+      <div className="flex justify-between px-2 py-1 text-gray-500 font-medium border-b border-gray-800 shrink-0">
+        <span className="flex-1">Price</span>
+        <span className="w-14 text-right">Size</span>
+        <span className="w-12 text-right">Total</span>
       </div>
 
       {/* Asks (Sells) */}
-      <div className="flex-1 overflow-hidden flex flex-col justify-end">
+      <div className="flex-1 flex flex-col justify-end overflow-hidden">
         {orderbook.asks.map((ask, i) => (
-          <div key={i} className="relative flex justify-between px-3 py-0.5 hover:bg-gray-800/50">
+          <div key={i} className="relative flex justify-between px-2 py-px hover:bg-gray-800/50">
             <div 
               className="absolute inset-0 bg-red-500/10" 
               style={{ width: `${(ask.total / maxTotal) * 100}%`, right: 0, left: 'auto' }}
             />
-            <span className="relative text-red-400 font-mono">${ask.price.toFixed(2)}</span>
-            <span className="relative text-gray-400 font-mono">{ask.size.toFixed(4)}</span>
-            <span className="relative text-gray-500 font-mono">{ask.total.toFixed(4)}</span>
+            <span className="relative text-red-400 font-mono flex-1">${ask.price.toFixed(2)}</span>
+            <span className="relative text-gray-400 font-mono w-14 text-right">{ask.size.toFixed(4)}</span>
+            <span className="relative text-gray-500 font-mono w-12 text-right">{ask.total.toFixed(2)}</span>
           </div>
         ))}
       </div>
 
-      {/* Spread */}
-      <div className="px-3 py-2 bg-gray-900/50 border-y border-gray-800 text-center">
-        <span className="font-mono font-bold text-lg text-white">${midPrice.toLocaleString()}</span>
-        <span className="ml-2 text-gray-500">Spread: ${spread.toFixed(2)}</span>
+      {/* Spread - always visible */}
+      <div className="px-2 py-1 bg-gray-900/50 border-y border-gray-800 shrink-0">
+        <div className="flex items-center justify-between">
+          <span className="font-mono font-bold text-xs text-white">${midPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          <span className="text-gray-500 text-[9px]">Spread: ${spread.toFixed(2)}</span>
+        </div>
       </div>
 
       {/* Bids (Buys) */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {orderbook.bids.map((bid, i) => (
-          <div key={i} className="relative flex justify-between px-3 py-0.5 hover:bg-gray-800/50">
+          <div key={i} className="relative flex justify-between px-2 py-px hover:bg-gray-800/50">
             <div 
               className="absolute inset-0 bg-green-500/10" 
               style={{ width: `${(bid.total / maxTotal) * 100}%`, right: 0, left: 'auto' }}
             />
-            <span className="relative text-green-400 font-mono">${bid.price.toFixed(2)}</span>
-            <span className="relative text-gray-400 font-mono">{bid.size.toFixed(4)}</span>
-            <span className="relative text-gray-500 font-mono">{bid.total.toFixed(4)}</span>
+            <span className="relative text-green-400 font-mono flex-1">${bid.price.toFixed(2)}</span>
+            <span className="relative text-gray-400 font-mono w-14 text-right">{bid.size.toFixed(4)}</span>
+            <span className="relative text-green-500 font-mono w-12 text-right">{bid.total.toFixed(2)}</span>
           </div>
         ))}
       </div>
