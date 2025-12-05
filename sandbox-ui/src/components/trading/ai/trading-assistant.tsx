@@ -59,14 +59,7 @@ export function TradingAssistant() {
   const { getPrice, connected } = useRealtime()
   const realtimePrice = getPrice(currentSymbol)
   
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: `Welcome to the Trading Assistant! I can help you analyze markets, place trades, and manage risk. Currently viewing **${currentSymbol}**.\n\nTry asking me:\n- "What's the trend on BTC?"\n- "Long ETH with 1% risk"\n- "Summarize my portfolio"`,
-      timestamp: new Date(),
-    },
-  ])
+  const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
