@@ -30,39 +30,23 @@ export function CenterPanel() {
       <div className="flex-1 flex min-h-0">
         {/* Main Chart */}
         <div className="flex-1 flex flex-col border-r border-gray-800">
-          {/* Chart Header */}
-          <div className="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-[#0d0d14]">
-            <div className="flex items-center gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold">{currentSymbol}</span>
-                  {currentMarket && (
-                    <Badge variant={currentMarket.change24h >= 0 ? 'default' : 'destructive'} className="text-xs">
-                      {currentMarket.change24h >= 0 ? '+' : ''}{currentMarket.change24h.toFixed(2)}%
-                    </Badge>
-                  )}
-                </div>
-                {currentMarket && (
-                  <div className="flex items-center gap-4 text-xs text-gray-500">
-                    <span>H: ${currentMarket.high24h.toLocaleString()}</span>
-                    <span>L: ${currentMarket.low24h.toLocaleString()}</span>
-                    <span>Vol: ${(currentMarket.volume24h / 1e9).toFixed(2)}B</span>
-                  </div>
-                )}
+          {/* Chart Header - Symbol and stats only (timeframe buttons are in the chart) */}
+          <div className="flex items-center px-4 py-2 border-b border-gray-800 bg-[#0d0d14]">
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-bold">{currentSymbol}</span>
+              {currentMarket && (
+                <Badge variant={currentMarket.change24h >= 0 ? 'default' : 'destructive'} className="text-xs">
+                  {currentMarket.change24h >= 0 ? '+' : ''}{currentMarket.change24h.toFixed(2)}%
+                </Badge>
+              )}
+            </div>
+            {currentMarket && (
+              <div className="flex items-center gap-4 ml-4 text-xs text-gray-500">
+                <span>H: ${currentMarket.high24h.toLocaleString()}</span>
+                <span>L: ${currentMarket.low24h.toLocaleString()}</span>
+                <span>Vol: ${(currentMarket.volume24h / 1e9).toFixed(2)}B</span>
               </div>
-            </div>
-
-            {/* Timeframe Selector */}
-            <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-0.5">
-              {['1m', '5m', '15m', '1H', '4H', '1D'].map((tf) => (
-                <button
-                  key={tf}
-                  className="px-2.5 py-1 text-xs font-medium rounded-md hover:bg-gray-800 transition-colors text-gray-400 hover:text-white"
-                >
-                  {tf}
-                </button>
-              ))}
-            </div>
+            )}
           </div>
 
           {/* Chart */}
