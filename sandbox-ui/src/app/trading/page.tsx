@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useTradingStore } from '@/stores/trading-store'
+import { useHyperliquidData } from '@/hooks/use-hyperliquid-data'
 import { TradingHeader } from '@/components/trading/trading-header'
 import { LeftPanel } from '@/components/trading/left-panel'
 import { CenterPanel } from '@/components/trading/center-panel'
@@ -15,8 +16,11 @@ export default function TradingPage() {
   const [showConnectModal, setShowConnectModal] = useState(false)
   const [initialized, setInitialized] = useState(false)
 
+  // Fetch real Hyperliquid data when connected
+  const { isHyperliquid, loading: hlLoading, error: hlError, lastUpdate } = useHyperliquidData()
+
   useEffect(() => {
-    // Initialize mock data on first load
+    // Initialize data on first load
     if (!initialized) {
       initializeMockData()
       setInitialized(true)

@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
   // Enable React strict mode for better debugging
   reactStrictMode: true,
   
+  
   // Compress responses
   compress: true,
   

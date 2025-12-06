@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTradingStore } from '@/stores/trading-store'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -8,6 +8,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { TradingAssistant } from './ai/trading-assistant'
+import { AutoTradingPanel } from './ai/auto-trading-panel'
+import { BacktestPanel } from './backtest-panel'
+import { DataDashboard } from './data-dashboard'
+import { ValidationDashboard } from './validation-dashboard'
+import { PaperTradingPanel } from './paper-trading-panel'
+import { useSentimentData, useNewsData } from '@/hooks/use-scraped-data'
 import { 
   Bot, 
   Newspaper, 
@@ -17,48 +23,96 @@ import {
   TrendingDown,
   Minus,
   ExternalLink,
-  Zap
+  Zap,
+  Cpu,
+  Brain,
+  Database,
+  FileCheck,
+  Wallet,
+  RefreshCw
 } from 'lucide-react'
 
 export function RightPanel() {
-  const { rightPanelTab, setRightPanelTab, news, currentSymbol } = useTradingStore()
+  const { rightPanelTab, setRightPanelTab, news: storeNews, currentSymbol } = useTradingStore()
+  
+  // Use scraped data hooks
+  const { sentiment, loading: sentimentLoading } = useSentimentData()
+  const { news: scrapedNews, loading: newsLoading } = useNewsData(currentSymbol)
+
+  // Merge store news with scraped news
+  const allNews = scrapedNews.length > 0 ? scrapedNews : storeNews
 
   // Filter news for current symbol
-  const filteredNews = news.filter(n => 
+  const filteredNews = allNews.filter(n => 
     n.symbols.includes(currentSymbol) || n.symbols.length === 0
   )
 
   return (
     <div className="w-80 border-l border-gray-800 bg-[#0d0d14] flex flex-col">
       <Tabs value={rightPanelTab} onValueChange={(v) => setRightPanelTab(v as any)} className="flex-1 flex flex-col">
-        <TabsList className="w-full justify-start gap-0.5 px-2 pt-2 bg-transparent rounded-none h-auto pb-2 border-b border-gray-800">
+        <TabsList className="w-full justify-start gap-0.5 px-2 pt-2 bg-transparent rounded-none h-auto pb-2 border-b border-gray-800 flex-nowrap overflow-x-auto">
           <TabsTrigger 
             value="assistant"
-            className="data-[state=active]:bg-purple-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs"
+            className="data-[state=active]:bg-purple-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs flex-shrink-0"
           >
             <Bot className="w-3.5 h-3.5 mr-1" />
             Assistant
           </TabsTrigger>
           <TabsTrigger 
             value="news"
-            className="data-[state=active]:bg-purple-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs"
+            className="data-[state=active]:bg-purple-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs flex-shrink-0"
           >
             <Newspaper className="w-3.5 h-3.5 mr-1" />
             News
           </TabsTrigger>
           <TabsTrigger 
             value="sentiment"
-            className="data-[state=active]:bg-purple-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs"
+            className="data-[state=active]:bg-purple-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs flex-shrink-0"
           >
             <BarChart3 className="w-3.5 h-3.5 mr-1" />
             Sentiment
           </TabsTrigger>
           <TabsTrigger 
             value="alerts"
-            className="data-[state=active]:bg-purple-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs"
+            className="data-[state=active]:bg-purple-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs flex-shrink-0"
           >
             <Bell className="w-3.5 h-3.5 mr-1" />
             Alerts
+          </TabsTrigger>
+          <TabsTrigger 
+            value="auto"
+            className="data-[state=active]:bg-green-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs flex-shrink-0"
+          >
+            <Cpu className="w-3.5 h-3.5 mr-1" />
+            Auto
+          </TabsTrigger>
+          <TabsTrigger 
+            value="backtest"
+            className="data-[state=active]:bg-purple-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs flex-shrink-0"
+          >
+            <Brain className="w-3.5 h-3.5 mr-1" />
+            Test
+          </TabsTrigger>
+          <TabsTrigger 
+            value="data"
+            className="data-[state=active]:bg-purple-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs flex-shrink-0"
+          >
+            <Database className="w-3.5 h-3.5 mr-1" />
+            Data
+          </TabsTrigger>
+          <TabsTrigger 
+            value="paper"
+            className="data-[state=active]:bg-blue-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs flex-shrink-0"
+          >
+            <Wallet className="w-3.5 h-3.5 mr-1" />
+            Paper
+          </TabsTrigger>
+          <TabsTrigger 
+            value="validate"
+            className="data-[state=active]:bg-amber-600 data-[state=active]:text-white px-2.5 py-1.5 text-xs flex-shrink-0"
+          >
+            <FileCheck className="w-3.5 h-3.5 mr-1" />
+            Validate
           </TabsTrigger>
         </TabsList>
 
@@ -96,29 +150,37 @@ export function RightPanel() {
         <TabsContent value="sentiment" className="flex-1 mt-0 overflow-hidden">
           <ScrollArea className="h-full">
             <div className="p-3 space-y-4">
+              {/* Loading indicator */}
+              {sentimentLoading && (
+                <div className="flex items-center justify-center py-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-purple-400 mr-2" />
+                  <span className="text-xs text-gray-400">Loading live data...</span>
+                </div>
+              )}
+              
               {/* Market Indices */}
               <div className="space-y-2">
                 <h3 className="text-xs font-semibold text-gray-500 uppercase">Market Indices</h3>
                 <IndexCard 
                   name="BTC Dominance" 
-                  value="52.4%" 
+                  value={sentiment ? `${sentiment.btc_dominance.toFixed(1)}%` : '...'} 
                   change={0.8} 
                 />
                 <IndexCard 
                   name="Total Market Cap" 
-                  value="$2.45T" 
+                  value={sentiment ? `$${sentiment.total_market_cap.toFixed(2)}T` : '...'} 
                   change={1.2} 
                 />
                 <IndexCard 
                   name="Fear & Greed" 
-                  value="72" 
-                  label="Greed"
-                  labelColor="text-green-400"
+                  value={sentiment ? sentiment.fear_greed_index.toString() : '...'} 
+                  label={sentiment?.fear_greed_label || 'Loading'}
+                  labelColor={sentiment?.fear_greed_index > 50 ? "text-green-400" : "text-red-400"}
                 />
                 <IndexCard 
                   name="Funding Rate" 
-                  value="0.015%" 
-                  change={0.002} 
+                  value={sentiment ? `${(sentiment.funding_rate * 100).toFixed(3)}%` : '...'} 
+                  change={sentiment?.funding_rate ? sentiment.funding_rate * 100 : 0} 
                 />
               </div>
 
@@ -127,11 +189,19 @@ export function RightPanel() {
                 <h3 className="text-xs font-semibold text-gray-500 uppercase mb-3">
                   {currentSymbol} Sentiment
                 </h3>
-                <SentimentGauge value={68} />
+                <SentimentGauge value={
+                  sentiment?.symbols?.[currentSymbol]?.sentiment_score || 50
+                } />
                 <div className="flex justify-between text-xs text-gray-500 mt-2">
                   <span>Bearish</span>
                   <span>Bullish</span>
                 </div>
+                {sentiment?.symbols?.[currentSymbol] && (
+                  <div className="mt-2 text-xs text-gray-400 text-center">
+                    Score: {sentiment.symbols[currentSymbol].sentiment_score} | 
+                    Mentions: {sentiment.symbols[currentSymbol].social_mentions.toLocaleString()}
+                  </div>
+                )}
               </div>
 
               {/* Social Volume */}
@@ -140,17 +210,46 @@ export function RightPanel() {
                 <div className="bg-gray-900/50 rounded-lg p-3 space-y-2">
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-400">Twitter Mentions</span>
-                    <span className="text-sm font-medium">+45%</span>
+                    <span className={`text-sm font-medium ${(sentiment?.social_volume?.twitter || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {sentiment?.social_volume?.twitter !== undefined 
+                        ? `${sentiment.social_volume.twitter >= 0 ? '+' : ''}${sentiment.social_volume.twitter}%`
+                        : '...'}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-gray-400">Reddit Posts</span>
-                    <span className="text-sm font-medium">+23%</span>
+                    <span className={`text-sm font-medium ${(sentiment?.social_volume?.reddit || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {sentiment?.social_volume?.reddit !== undefined 
+                        ? `${sentiment.social_volume.reddit >= 0 ? '+' : ''}${sentiment.social_volume.reddit}%`
+                        : '...'}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-gray-400">News Articles</span>
-                    <span className="text-sm font-medium">+12%</span>
+                    <span className="text-sm text-gray-400">Telegram Activity</span>
+                    <span className={`text-sm font-medium ${(sentiment?.social_volume?.telegram || 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {sentiment?.social_volume?.telegram !== undefined 
+                        ? `${sentiment.social_volume.telegram >= 0 ? '+' : ''}${sentiment.social_volume.telegram}%`
+                        : '...'}
+                    </span>
                   </div>
                 </div>
+              </div>
+
+              {/* Long/Short Ratio */}
+              <div className="bg-gray-900/50 rounded-lg p-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-gray-400">Long/Short Ratio</span>
+                  <span className={`text-sm font-medium ${(sentiment?.long_short_ratio || 1) >= 1 ? 'text-green-400' : 'text-red-400'}`}>
+                    {sentiment?.long_short_ratio?.toFixed(2) || '...'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Data Source */}
+              <div className="text-center text-[10px] text-gray-600">
+                {sentiment?.timestamp && (
+                  <>Last updated: {new Date(sentiment.timestamp).toLocaleTimeString()}</>
+                )}
               </div>
             </div>
           </ScrollArea>
@@ -188,6 +287,31 @@ export function RightPanel() {
               </div>
             </ScrollArea>
           </div>
+        </TabsContent>
+
+        {/* Auto Trading Tab */}
+        <TabsContent value="auto" className="flex-1 mt-0 overflow-hidden">
+          <AutoTradingPanel />
+        </TabsContent>
+
+        {/* Backtest Tab */}
+        <TabsContent value="backtest" className="flex-1 mt-0 overflow-hidden">
+          <BacktestPanel />
+        </TabsContent>
+
+        {/* Data History Tab */}
+        <TabsContent value="data" className="flex-1 mt-0 overflow-hidden">
+          <DataDashboard />
+        </TabsContent>
+
+        {/* Paper Trading Tab */}
+        <TabsContent value="paper" className="flex-1 mt-0 overflow-hidden">
+          <PaperTradingPanel />
+        </TabsContent>
+
+        {/* Validation Tab */}
+        <TabsContent value="validate" className="flex-1 mt-0 overflow-hidden">
+          <ValidationDashboard />
         </TabsContent>
       </Tabs>
     </div>
@@ -295,4 +419,5 @@ function AlertCard({
     </div>
   )
 }
+
 

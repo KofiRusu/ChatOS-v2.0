@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useTradingStore, Exchange, TradingMode } from '@/stores/trading-store'
+import { useDataRecorder } from '@/hooks/use-data-recorder'
 import { Button } from '@/components/ui/button'
 import { 
   Select,
@@ -19,11 +20,25 @@ import {
   Zap,
   Eye,
   FileText,
-  Radio
+  Radio,
+  RefreshCw,
+  Circle,
+  Database
 } from 'lucide-react'
 
 interface TradingHeaderProps {
   onConnectExchange: () => void
+}
+
+interface LiveMarket {
+  symbol: string
+  base: string
+  quote: string
+  price: number
+  change24h: number
+  volume24h: number
+  high24h: number
+  low24h: number
 }
 
 export function TradingHeader({ onConnectExchange }: TradingHeaderProps) {
@@ -35,17 +50,64 @@ export function TradingHeader({ onConnectExchange }: TradingHeaderProps) {
     setMode,
     currentSymbol,
     setCurrentSymbol,
-    markets
   } = useTradingStore()
+
+  const {
+    isRecording,
+    totalRecords,
+    toggleRecording,
+    symbolsRecording,
+  } = useDataRecorder()
 
   const [searchQuery, setSearchQuery] = useState('')
   const [showSearch, setShowSearch] = useState(false)
+  const [liveMarkets, setLiveMarkets] = useState<LiveMarket[]>([])
+  const [currentTicker, setCurrentTicker] = useState<{ price: number; change: number } | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  // Fetch live markets
+  const fetchMarkets = useCallback(async () => {
+    try {
+      const response = await fetch('/api/market?action=markets')
+      if (!response.ok) throw new Error('Failed to fetch markets')
+      const data = await response.json()
+      setLiveMarkets(data.markets || [])
+      setLoading(false)
+    } catch (err) {
+      console.error('Error fetching markets:', err)
+      setLoading(false)
+    }
+  }, [])
+
+  // Fetch current ticker
+  const fetchTicker = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/market?action=ticker&symbol=${currentSymbol}`)
+      if (!response.ok) throw new Error('Failed to fetch ticker')
+      const data = await response.json()
+      setCurrentTicker({ price: data.last, change: data.percentage })
+    } catch (err) {
+      console.error('Error fetching ticker:', err)
+    }
+  }, [currentSymbol])
+
+  // Initial fetch and periodic refresh
+  useEffect(() => {
+    fetchMarkets()
+    fetchTicker()
+    const marketInterval = setInterval(fetchMarkets, 30000) // 30 seconds
+    const tickerInterval = setInterval(fetchTicker, 5000) // 5 seconds
+    return () => {
+      clearInterval(marketInterval)
+      clearInterval(tickerInterval)
+    }
+  }, [fetchMarkets, fetchTicker])
 
   const currentAccount = accounts.find(a => a.id === currentAccountId)
 
-  const filteredMarkets = markets.filter(m => 
+  const filteredMarkets = liveMarkets.filter(m => 
     m.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    m.baseAsset.toLowerCase().includes(searchQuery.toLowerCase())
+    m.base.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const modeConfig: Record<TradingMode, { icon: React.ReactNode; color: string; label: string }> = {
@@ -113,7 +175,11 @@ export function TradingHeader({ onConnectExchange }: TradingHeaderProps) {
         {/* Search Results Dropdown */}
         {showSearch && searchQuery && (
           <div className="absolute top-full left-0 right-0 mt-1 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50 max-h-80 overflow-auto">
-            {filteredMarkets.length === 0 ? (
+            {loading ? (
+              <div className="p-4 text-center text-gray-500">
+                <RefreshCw className="w-5 h-5 animate-spin mx-auto" />
+              </div>
+            ) : filteredMarkets.length === 0 ? (
               <div className="p-4 text-center text-gray-500">No markets found</div>
             ) : (
               filteredMarkets.map((market) => (
@@ -128,15 +194,17 @@ export function TradingHeader({ onConnectExchange }: TradingHeaderProps) {
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-full bg-gray-800 flex items-center justify-center text-xs font-bold">
-                      {market.baseAsset.slice(0, 2)}
+                      {market.base.slice(0, 2)}
                     </div>
                     <div className="text-left">
                       <div className="font-medium">{market.symbol}</div>
-                      <div className="text-xs text-gray-500">{market.baseAsset}</div>
+                      <div className="text-xs text-gray-500">{market.base}</div>
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="font-mono">${market.price.toLocaleString()}</div>
+                    <div className="font-mono">
+                      ${market.price.toLocaleString(undefined, { maximumFractionDigits: market.price < 1 ? 4 : 2 })}
+                    </div>
                     <div className={`text-xs ${market.change24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {market.change24h >= 0 ? '+' : ''}{market.change24h.toFixed(2)}%
                     </div>
@@ -151,18 +219,43 @@ export function TradingHeader({ onConnectExchange }: TradingHeaderProps) {
       {/* Current Symbol Display */}
       <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-900 rounded-lg border border-gray-700">
         <span className="font-bold">{currentSymbol}</span>
-        {markets.find(m => m.symbol === currentSymbol) && (
-          <span className={`text-sm ${
-            (markets.find(m => m.symbol === currentSymbol)?.change24h || 0) >= 0 
-              ? 'text-green-400' 
-              : 'text-red-400'
-          }`}>
-            ${markets.find(m => m.symbol === currentSymbol)?.price.toLocaleString()}
+        {currentTicker ? (
+          <span className={`text-sm ${currentTicker.change >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+            ${currentTicker.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
           </span>
+        ) : (
+          <RefreshCw className="w-3 h-3 animate-spin text-gray-500" />
         )}
       </div>
 
       <div className="flex-1" />
+
+      {/* Data Recording Toggle */}
+      <button
+        onClick={() => toggleRecording({
+          symbols: ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'],
+          intervalMs: 30000,
+        })}
+        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-colors ${
+          isRecording
+            ? 'bg-red-500/20 border-red-500/50 text-red-400'
+            : 'bg-gray-900 border-gray-700 text-gray-400 hover:text-white hover:border-gray-600'
+        }`}
+        title={isRecording ? `Recording ${symbolsRecording.length} symbols (${totalRecords} records)` : 'Start recording market data for PersRM'}
+      >
+        {isRecording ? (
+          <>
+            <Circle className="w-3 h-3 fill-red-500 animate-pulse" />
+            <span className="text-xs font-medium">REC</span>
+            <span className="text-xs text-gray-500">{totalRecords}</span>
+          </>
+        ) : (
+          <>
+            <Database className="w-4 h-4" />
+            <span className="text-xs font-medium">Record</span>
+          </>
+        )}
+      </button>
 
       {/* Mode Toggle */}
       <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-1 border border-gray-700">
@@ -194,4 +287,3 @@ export function TradingHeader({ onConnectExchange }: TradingHeaderProps) {
     </header>
   )
 }
-

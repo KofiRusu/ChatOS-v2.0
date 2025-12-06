@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 import { useTradingStore, Exchange } from '@/stores/trading-store'
+import { EXCHANGE_CONFIGS, getExchangeConfig } from '@/lib/trading/exchange-links'
+import { HyperliquidConnectModal } from './hyperliquid-connect-modal'
 import {
   Dialog,
   DialogContent,
@@ -19,7 +21,10 @@ import {
   Shield, 
   AlertTriangle,
   Loader2,
-  ExternalLink
+  ExternalLink,
+  Star,
+  Zap,
+  Globe
 } from 'lucide-react'
 
 interface ConnectExchangeModalProps {
@@ -27,11 +32,11 @@ interface ConnectExchangeModalProps {
   onClose: () => void
 }
 
-const exchanges: { id: Exchange; name: string; logo: string; description: string }[] = [
-  { id: 'binance', name: 'Binance', logo: '🔶', description: 'Largest crypto exchange' },
-  { id: 'bybit', name: 'Bybit', logo: '🟡', description: 'Popular derivatives exchange' },
-  { id: 'hyperliquid', name: 'Hyperliquid', logo: '💧', description: 'Decentralized perps' },
-  { id: 'coinbase', name: 'Coinbase', logo: '🔵', description: 'US-regulated exchange' },
+const exchanges: { id: Exchange; name: string; logo: string; description: string; recommended?: boolean; type: string }[] = [
+  { id: 'hyperliquid', name: 'Hyperliquid', logo: '💧', description: 'Decentralized perps - No KYC', recommended: true, type: 'DEX' },
+  { id: 'binance', name: 'Binance', logo: '🔶', description: 'Largest crypto exchange', type: 'CEX' },
+  { id: 'bybit', name: 'Bybit', logo: '🟡', description: 'Popular derivatives exchange', type: 'CEX' },
+  { id: 'coinbase', name: 'Coinbase', logo: '🔵', description: 'US-regulated exchange', type: 'CEX' },
 ]
 
 export function ConnectExchangeModal({ open, onClose }: ConnectExchangeModalProps) {
@@ -42,8 +47,15 @@ export function ConnectExchangeModal({ open, onClose }: ConnectExchangeModalProp
   const [apiSecret, setApiSecret] = useState('')
   const [connecting, setConnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showHyperliquidModal, setShowHyperliquidModal] = useState(false)
 
   const handleSelectExchange = (exchange: Exchange) => {
+    // Hyperliquid has its own modal with wallet-based auth
+    if (exchange === 'hyperliquid') {
+      setShowHyperliquidModal(true)
+      return
+    }
+    
     setSelectedExchange(exchange)
     setStep(2)
   }
@@ -78,19 +90,26 @@ export function ConnectExchangeModal({ open, onClose }: ConnectExchangeModalProp
   }
 
   const exchangeData = exchanges.find(e => e.id === selectedExchange)
+  const exchangeConfig = selectedExchange ? getExchangeConfig(selectedExchange) : null
 
   return (
+    <>
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="bg-[#0d0d14] border-gray-800 text-white sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>
-            {step === 1 && 'Connect Exchange'}
+            <DialogTitle className="flex items-center gap-2">
+              {step === 1 && (
+                <>
+                  <Globe className="w-5 h-5 text-purple-400" />
+                  Connect Exchange
+                </>
+              )}
             {step === 2 && 'API Permissions'}
             {step === 3 && 'Enter API Credentials'}
             {step === 4 && 'Connected!'}
           </DialogTitle>
           <DialogDescription className="text-gray-400">
-            {step === 1 && 'Select an exchange to connect'}
+              {step === 1 && 'Select an exchange to enable live trading'}
             {step === 2 && `Setting up ${exchangeData?.name}`}
             {step === 3 && 'Paste your API key and secret'}
             {step === 4 && 'Your exchange is now connected'}
@@ -104,21 +123,42 @@ export function ConnectExchangeModal({ open, onClose }: ConnectExchangeModalProp
               <button
                 key={exchange.id}
                 onClick={() => handleSelectExchange(exchange.id)}
-                className="w-full flex items-center gap-3 p-3 rounded-lg border border-gray-800 hover:border-purple-500 hover:bg-purple-500/10 transition-colors text-left"
+                  className={`w-full flex items-center gap-3 p-3 rounded-lg border transition-colors text-left ${
+                    exchange.recommended 
+                      ? 'border-purple-500/50 bg-purple-500/5 hover:bg-purple-500/10' 
+                      : 'border-gray-800 hover:border-purple-500 hover:bg-purple-500/10'
+                  }`}
               >
                 <div className="text-2xl">{exchange.logo}</div>
                 <div className="flex-1">
-                  <div className="font-medium">{exchange.name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{exchange.name}</span>
+                      {exchange.recommended && (
+                        <Badge className="bg-purple-500/20 text-purple-400 text-[10px] px-1.5">
+                          <Star className="w-2.5 h-2.5 mr-0.5 fill-current" />
+                          RECOMMENDED
+                        </Badge>
+                      )}
+                      <Badge className={`text-[9px] px-1 ${exchange.type === 'DEX' ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                        {exchange.type}
+                      </Badge>
+                    </div>
                   <div className="text-xs text-gray-500">{exchange.description}</div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-gray-500" />
               </button>
             ))}
+              
+              <div className="pt-3 border-t border-gray-800 mt-3">
+                <p className="text-[10px] text-gray-500 text-center">
+                  We recommend starting with <span className="text-purple-400">Hyperliquid Testnet</span> to practice with virtual funds
+                </p>
+              </div>
           </div>
         )}
 
         {/* Step 2: Permissions Info */}
-        {step === 2 && (
+          {step === 2 && exchangeConfig && (
           <div className="space-y-4 py-4">
             <div className="bg-gray-900 rounded-lg p-4 space-y-3">
               <div className="flex items-center gap-2 text-sm font-medium">
@@ -137,28 +177,53 @@ export function ConnectExchangeModal({ open, onClose }: ConnectExchangeModalProp
               </div>
             </div>
 
+              {/* Setup Steps */}
+              <div className="bg-gray-900/50 rounded-lg p-3 space-y-2">
+                <div className="text-xs font-medium text-gray-400">Setup Steps:</div>
+                <ol className="text-xs text-gray-400 space-y-1">
+                  {exchangeConfig.apiSetupSteps.slice(0, 4).map((step, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span className="text-purple-400">{i + 1}.</span>
+                      {step}
+                    </li>
+                  ))}
+                </ol>
+              </div>
+
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-4 space-y-2">
               <div className="flex items-center gap-2 text-amber-400 text-sm font-medium">
                 <AlertTriangle className="w-4 h-4" />
                 Important
               </div>
               <ul className="text-xs text-gray-400 space-y-1">
-                <li>• Do NOT enable withdrawal permissions</li>
-                <li>• Use IP whitelist if available</li>
-                <li>• We never store your credentials</li>
+                  {exchangeConfig.warnings?.map((warning, i) => (
+                    <li key={i}>• {warning}</li>
+                  ))}
               </ul>
             </div>
 
-            <div className="flex items-center gap-2 text-xs text-gray-500">
-              <a 
-                href={`https://${selectedExchange}.com`} 
+              <div className="flex flex-col gap-2">
+                <a 
+                  href={exchangeConfig.apiSettingsUrl || exchangeConfig.tradingUrl}
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 p-2 bg-purple-600/20 rounded-lg text-purple-400 hover:bg-purple-600/30 transition-colors text-sm"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  Open {exchangeData?.name} API Settings
+                </a>
+                
+                {exchangeConfig.testnetUrl && (
+                  <a 
+                    href={exchangeConfig.testnetUrl}
                 target="_blank" 
                 rel="noopener noreferrer"
-                className="flex items-center gap-1 text-purple-400 hover:text-purple-300"
+                    className="flex items-center justify-center gap-2 p-2 bg-green-600/20 rounded-lg text-green-400 hover:bg-green-600/30 transition-colors text-xs"
               >
-                Open {exchangeData?.name} API settings
-                <ExternalLink className="w-3 h-3" />
+                    <Zap className="w-3 h-3" />
+                    Try on Testnet First (Recommended)
               </a>
+                )}
             </div>
 
             <div className="flex gap-2">
@@ -166,7 +231,7 @@ export function ConnectExchangeModal({ open, onClose }: ConnectExchangeModalProp
                 Back
               </Button>
               <Button onClick={() => setStep(3)} className="flex-1 bg-purple-600 hover:bg-purple-700">
-                Continue
+                  I have my API keys
               </Button>
             </div>
           </div>
@@ -197,6 +262,13 @@ export function ConnectExchangeModal({ open, onClose }: ConnectExchangeModalProp
                 className="bg-gray-900 border-gray-700 font-mono text-sm"
               />
             </div>
+
+              <div className="bg-gray-900/50 rounded-lg p-3 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-green-400 flex-shrink-0" />
+                <p className="text-[10px] text-gray-400">
+                  Your credentials are encrypted and stored securely in your browser session only.
+                </p>
+              </div>
 
             {error && (
               <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
@@ -234,8 +306,27 @@ export function ConnectExchangeModal({ open, onClose }: ConnectExchangeModalProp
             </div>
             <div>
               <div className="text-lg font-medium">{exchangeData?.name} Connected!</div>
-              <div className="text-sm text-gray-400">Your account is ready to trade</div>
+                <div className="text-sm text-gray-400">Your account is ready for live trading</div>
+              </div>
+              
+              <div className="bg-gray-900/50 rounded-lg p-3 text-xs text-gray-400">
+                <p>You can now:</p>
+                <ul className="mt-2 space-y-1 text-left">
+                  <li className="flex items-center gap-2">
+                    <Check className="w-3 h-3 text-green-400" />
+                    View live balances & positions
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-3 h-3 text-green-400" />
+                    Place orders directly
+                  </li>
+                  <li className="flex items-center gap-2">
+                    <Check className="w-3 h-3 text-green-400" />
+                    Enable PersRM auto-trading
+                  </li>
+                </ul>
             </div>
+              
             <Button onClick={handleClose} className="bg-purple-600 hover:bg-purple-700">
               Start Trading
             </Button>
@@ -243,6 +334,15 @@ export function ConnectExchangeModal({ open, onClose }: ConnectExchangeModalProp
         )}
       </DialogContent>
     </Dialog>
+
+      {/* Hyperliquid has its own specialized modal */}
+      <HyperliquidConnectModal
+        open={showHyperliquidModal}
+        onClose={() => {
+          setShowHyperliquidModal(false)
+          handleClose()
+        }}
+      />
+    </>
   )
 }
-

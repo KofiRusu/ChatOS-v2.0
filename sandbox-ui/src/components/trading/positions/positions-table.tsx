@@ -60,17 +60,18 @@ export function PositionsTable() {
 
   return (
     <>
-      <table className="w-full text-sm">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[600px]">
         <thead className="bg-[#0d0d14] sticky top-0">
           <tr className="text-gray-500 text-xs">
-            <th className="text-left p-3 font-medium">Symbol</th>
-            <th className="text-left p-3 font-medium">Side</th>
-            <th className="text-right p-3 font-medium">Size</th>
-            <th className="text-right p-3 font-medium">Entry</th>
-            <th className="text-right p-3 font-medium">Current</th>
-            <th className="text-right p-3 font-medium">PnL</th>
-            <th className="text-right p-3 font-medium">SL / TP</th>
-            <th className="text-right p-3 font-medium">Actions</th>
+              <th className="text-left p-2 font-medium whitespace-nowrap">Symbol</th>
+              <th className="text-left p-2 font-medium whitespace-nowrap">Side</th>
+              <th className="text-right p-2 font-medium whitespace-nowrap">Size</th>
+              <th className="text-right p-2 font-medium whitespace-nowrap">Entry</th>
+              <th className="text-right p-2 font-medium whitespace-nowrap">Current</th>
+              <th className="text-right p-2 font-medium whitespace-nowrap">PnL</th>
+              <th className="text-right p-2 font-medium whitespace-nowrap">SL/TP</th>
+              <th className="text-right p-2 font-medium whitespace-nowrap">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -88,61 +89,62 @@ export function PositionsTable() {
                 className="border-b border-gray-800 hover:bg-gray-900/50 cursor-pointer"
                 onClick={() => setCurrentSymbol(position.symbol)}
               >
-                <td className="p-3">
+                <td className="p-2">
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-gray-800 flex items-center justify-center text-[10px] font-bold">
+                    <div className="w-6 h-6 rounded-full bg-gray-800 flex items-center justify-center text-[9px] font-bold">
                       {position.symbol.slice(0, 2)}
                     </div>
-                    <span className="font-medium">{position.symbol}</span>
+                    <span className="font-medium text-xs">{position.symbol}</span>
                   </div>
                 </td>
-                <td className="p-3">
+                <td className="p-2">
                   <Badge 
                     variant={position.side === 'long' ? 'default' : 'destructive'}
-                    className="text-[10px]"
+                    className="text-[9px] px-1.5"
                   >
                     {position.side.toUpperCase()}
                   </Badge>
                 </td>
-                <td className="p-3 text-right font-mono">{position.size.toFixed(4)}</td>
-                <td className="p-3 text-right font-mono">${position.entryPrice.toLocaleString()}</td>
-                <td className="p-3 text-right font-mono">${currentPrice.toLocaleString()}</td>
-                <td className="p-3 text-right">
-                  <div className={`font-mono ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                <td className="p-2 text-right font-mono text-xs">{position.size.toFixed(4)}</td>
+                <td className="p-2 text-right font-mono text-xs">${position.entryPrice.toLocaleString()}</td>
+                <td className="p-2 text-right font-mono text-xs">${currentPrice.toLocaleString()}</td>
+                <td className="p-2 text-right">
+                  <div className={`font-mono text-xs ${pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                     <div>{pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</div>
-                    <div className="text-xs opacity-75">{pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%</div>
+                    <div className="text-[10px] opacity-75">{pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%</div>
                   </div>
                 </td>
-                <td className="p-3 text-right">
-                  <div className="text-xs font-mono">
+                <td className="p-2 text-right">
+                  <div className="text-[10px] font-mono whitespace-nowrap">
                     {position.stopLoss && (
-                      <div className="text-red-400">${position.stopLoss.toLocaleString()}</div>
+                      <span className="text-red-400">${position.stopLoss.toLocaleString()}</span>
                     )}
+                    {position.stopLoss && position.takeProfit && <span className="text-gray-600"> / </span>}
                     {position.takeProfit && (
-                      <div className="text-green-400">${position.takeProfit.toLocaleString()}</div>
+                      <span className="text-green-400">${position.takeProfit.toLocaleString()}</span>
                     )}
                     {!position.stopLoss && !position.takeProfit && (
                       <span className="text-gray-500">-</span>
                     )}
                   </div>
                 </td>
-                <td className="p-3 text-right">
-                  <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                <td className="p-2 text-right">
+                  <div className="flex items-center justify-end gap-0.5" onClick={(e) => e.stopPropagation()}>
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="h-7 w-7 text-gray-400 hover:text-white"
+                      className="h-6 w-6 text-gray-400 hover:text-white"
                       onClick={() => openEditModal(position.id)}
                     >
-                      <Edit className="w-3.5 h-3.5" />
+                      <Edit className="w-3 h-3" />
                     </Button>
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="h-7 w-7 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                      className="h-6 w-6 text-red-400 hover:text-red-300 hover:bg-red-500/10"
                       onClick={() => closePosition(position.id, currentPrice)}
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <X className="w-3 h-3" />
                     </Button>
                   </div>
                 </td>
@@ -151,6 +153,7 @@ export function PositionsTable() {
           })}
         </tbody>
       </table>
+      </div>
 
       {/* Edit Position Modal */}
       <Dialog open={!!editingPosition} onOpenChange={() => setEditingPosition(null)}>

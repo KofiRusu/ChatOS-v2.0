@@ -1,6 +1,8 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { useTradingStore } from '@/stores/trading-store'
+import { useLivePrices } from '@/hooks/use-live-prices'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
@@ -10,21 +12,57 @@ import {
   BookOpen,
   Star,
   Globe,
-  DollarSign,
-  BarChart3
+  RefreshCw
 } from 'lucide-react'
+
+// Symbol to name mapping
+const SYMBOL_NAMES: Record<string, string> = {
+  'BTCUSDT': 'Bitcoin',
+  'ETHUSDT': 'Ethereum',
+  'SOLUSDT': 'Solana',
+  'BNBUSDT': 'BNB',
+  'XRPUSDT': 'XRP',
+  'ADAUSDT': 'Cardano',
+  'DOGEUSDT': 'Dogecoin',
+  'AVAXUSDT': 'Avalanche',
+  'DOTUSDT': 'Polkadot',
+  'LINKUSDT': 'Chainlink',
+  'MATICUSDT': 'Polygon',
+  'UNIUSDT': 'Uniswap',
+  'ATOMUSDT': 'Cosmos',
+  'LTCUSDT': 'Litecoin',
+  'TRXUSDT': 'TRON',
+}
+
+const FAVORITES = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
+const ALL_CRYPTOS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'LINKUSDT']
 
 export function LeftPanel() {
   const { 
     selectedTab, 
     setSelectedTab, 
-    watchlists, 
     currentSymbol, 
     setCurrentSymbol,
     portfolio,
     positions,
     journal
   } = useTradingStore()
+
+  const { prices, loading, lastUpdate, refetch } = useLivePrices({ refreshInterval: 10000 })
+
+  // Create watchlist items from live prices
+  const createWatchlistItem = (symbol: string) => {
+    const priceData = prices[symbol]
+    return {
+      symbol,
+      name: SYMBOL_NAMES[symbol] || symbol.replace('USDT', ''),
+      price: priceData?.price || 0,
+      change24h: priceData?.change24h || 0,
+    }
+  }
+
+  const favoriteItems = FAVORITES.map(createWatchlistItem)
+  const cryptoItems = ALL_CRYPTOS.map(createWatchlistItem)
 
   return (
     <div className="w-64 border-r border-gray-800 bg-[#0d0d14] flex flex-col">
@@ -57,6 +95,23 @@ export function LeftPanel() {
         <TabsContent value="markets" className="flex-1 mt-0 overflow-hidden">
           <ScrollArea className="h-full">
             <div className="p-2 space-y-4">
+              {/* Live indicator */}
+              <div className="flex items-center justify-between px-2">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${loading ? 'bg-yellow-400 animate-pulse' : 'bg-green-400'}`} />
+                  <span className="text-[10px] text-gray-500">
+                    {loading ? 'Updating...' : 'Live from Binance'}
+                  </span>
+                </div>
+                <button 
+                  onClick={refetch}
+                  className="p-1 hover:bg-gray-800 rounded transition-colors"
+                  disabled={loading}
+                >
+                  <RefreshCw className={`w-3 h-3 text-gray-500 ${loading ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+
               {/* Favorites */}
               <div>
                 <div className="flex items-center gap-2 px-2 py-1 text-xs font-semibold text-gray-500 uppercase">
@@ -64,7 +119,7 @@ export function LeftPanel() {
                   Favorites
                 </div>
                 <div className="space-y-0.5">
-                  {watchlists.favorites?.map((item) => (
+                  {favoriteItems.map((item) => (
                     <WatchlistRow
                       key={item.symbol}
                       item={item}
@@ -82,7 +137,7 @@ export function LeftPanel() {
                   Crypto
                 </div>
                 <div className="space-y-0.5">
-                  {watchlists.crypto?.map((item) => (
+                  {cryptoItems.map((item) => (
                     <WatchlistRow
                       key={item.symbol}
                       item={item}
@@ -209,12 +264,13 @@ function WatchlistRow({ item, isActive, onClick }: WatchlistRowProps) {
         </div>
       </div>
       <div className="text-right">
-        <div className="text-sm font-mono">${item.price.toLocaleString()}</div>
+        <div className="text-sm font-mono">
+          ${item.price > 0 ? item.price.toLocaleString(undefined, { maximumFractionDigits: item.price < 1 ? 4 : 2 }) : '—'}
+        </div>
         <div className={`text-[10px] ${item.change24h >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-          {item.change24h >= 0 ? '+' : ''}{item.change24h.toFixed(2)}%
+          {item.price > 0 ? `${item.change24h >= 0 ? '+' : ''}${item.change24h.toFixed(2)}%` : '—'}
         </div>
       </div>
     </button>
   )
 }
-

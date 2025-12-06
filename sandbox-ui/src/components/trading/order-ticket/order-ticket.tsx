@@ -116,40 +116,62 @@ export function OrderTicket() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-[#0d0d14] p-3">
-      {/* Side Toggle */}
-      <div className="flex gap-1 mb-3">
+    <div className="h-full flex flex-col bg-[#0d0d14] overflow-y-auto">
+      {/* Header */}
+      <div className="px-3 pt-3 pb-2 border-b border-gray-800">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm font-bold text-white">{currentSymbol}</span>
+          <Badge variant="outline" className="text-[10px]">
+            {mode === 'paper' ? 'Paper' : mode === 'live' ? 'Live' : 'View'}
+          </Badge>
+        </div>
+        <div className="text-xs text-gray-500">
+          Price: <span className="text-white font-mono">${currentPrice.toFixed(2)}</span>
+        </div>
+      </div>
+
+      <div className="p-3 flex-1">
+      {/* Side Toggle - More Prominent */}
+      <div className="flex gap-2 mb-4">
         <Button
           onClick={() => setSide('buy')}
           variant={side === 'buy' ? 'default' : 'outline'}
-          className={`flex-1 ${side === 'buy' ? 'bg-green-600 hover:bg-green-700 border-green-600' : 'border-gray-700'}`}
+          className={`flex-1 py-3 text-sm font-bold transition-all ${
+            side === 'buy' 
+              ? 'bg-green-600 hover:bg-green-700 border-2 border-green-500 text-white shadow-lg shadow-green-500/30' 
+              : 'border-2 border-gray-600 text-gray-400 hover:border-green-500/50 hover:text-green-400 hover:bg-green-500/10'
+          }`}
         >
-          <TrendingUp className="w-4 h-4 mr-1.5" />
+          <TrendingUp className="w-5 h-5 mr-2" />
           Long
         </Button>
         <Button
           onClick={() => setSide('sell')}
           variant={side === 'sell' ? 'default' : 'outline'}
-          className={`flex-1 ${side === 'sell' ? 'bg-red-600 hover:bg-red-700 border-red-600' : 'border-gray-700'}`}
+          className={`flex-1 py-3 text-sm font-bold transition-all ${
+            side === 'sell' 
+              ? 'bg-red-600 hover:bg-red-700 border-2 border-red-500 text-white shadow-lg shadow-red-500/30' 
+              : 'border-2 border-gray-600 text-gray-400 hover:border-red-500/50 hover:text-red-400 hover:bg-red-500/10'
+          }`}
         >
-          <TrendingDown className="w-4 h-4 mr-1.5" />
+          <TrendingDown className="w-5 h-5 mr-2" />
           Short
         </Button>
       </div>
 
       {/* Order Type Tabs */}
-      <Tabs value={orderType} onValueChange={(v) => setOrderType(v as OrderType)} className="mb-3">
-        <TabsList className="w-full bg-gray-900 border border-gray-800">
-          <TabsTrigger value="market" className="flex-1 text-xs">Market</TabsTrigger>
-          <TabsTrigger value="limit" className="flex-1 text-xs">Limit</TabsTrigger>
-          <TabsTrigger value="stop" className="flex-1 text-xs">Stop</TabsTrigger>
+      <Tabs value={orderType} onValueChange={(v) => setOrderType(v as OrderType)} className="mb-4">
+        <TabsList className="w-full bg-gray-900 border border-gray-800 h-9">
+          <TabsTrigger value="market" className="flex-1 text-xs font-medium data-[state=active]:bg-purple-600 data-[state=active]:text-white">Market</TabsTrigger>
+          <TabsTrigger value="limit" className="flex-1 text-xs font-medium data-[state=active]:bg-purple-600 data-[state=active]:text-white">Limit</TabsTrigger>
+          <TabsTrigger value="stop" className="flex-1 text-xs font-medium data-[state=active]:bg-purple-600 data-[state=active]:text-white">Stop</TabsTrigger>
         </TabsList>
       </Tabs>
 
       {/* Amount Input */}
-      <div className="space-y-2 mb-3">
+      <div className="space-y-2.5 mb-4">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-gray-400">Amount</Label>
+          <Label className="text-sm font-medium text-gray-300">Amount</Label>
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500">% of Balance</span>
             <Switch 
@@ -203,12 +225,12 @@ export function OrderTicket() {
       )}
 
       {/* SL/TP Controls */}
-      <div className="grid grid-cols-2 gap-2 mb-3">
+      <div className="grid grid-cols-2 gap-3 mb-4">
         {/* Stop Loss */}
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400 flex items-center gap-1">
-              <Shield className="w-3 h-3 text-red-400" />
+            <Label className="text-xs font-medium text-gray-300 flex items-center gap-1.5">
+              <Shield className="w-3.5 h-3.5 text-red-400" />
               Stop Loss
             </Label>
             <Switch 
@@ -235,10 +257,10 @@ export function OrderTicket() {
         </div>
 
         {/* Take Profit */}
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <Label className="text-xs text-gray-400 flex items-center gap-1">
-              <Target className="w-3 h-3 text-green-400" />
+            <Label className="text-xs font-medium text-gray-300 flex items-center gap-1.5">
+              <Target className="w-3.5 h-3.5 text-green-400" />
               Take Profit
             </Label>
             <Switch 
@@ -266,7 +288,7 @@ export function OrderTicket() {
       </div>
 
       {/* Order Summary */}
-      <div className="bg-gray-900/50 rounded-lg p-2.5 mb-3 space-y-1.5 text-xs">
+      <div className="bg-gray-900/60 border border-gray-800 rounded-lg p-3 mb-4 space-y-2 text-xs">
         <div className="flex justify-between">
           <span className="text-gray-400">Order Value</span>
           <span className="font-mono">${calculations.orderValue.toFixed(2)}</span>
@@ -296,15 +318,15 @@ export function OrderTicket() {
       <Button
         onClick={handleSubmit}
         disabled={calculations.orderValue <= 0 || mode === 'view'}
-        className={`w-full font-bold ${
+        className={`w-full py-3 text-sm font-bold shadow-lg transition-all ${
           side === 'buy' 
-            ? 'bg-green-600 hover:bg-green-700' 
-            : 'bg-red-600 hover:bg-red-700'
-        }`}
+            ? 'bg-green-600 hover:bg-green-700 border-2 border-green-500 shadow-green-500/30' 
+            : 'bg-red-600 hover:bg-red-700 border-2 border-red-500 shadow-red-500/30'
+        } disabled:opacity-50 disabled:cursor-not-allowed`}
       >
         {mode === 'view' ? 'View Only Mode' : (
           <>
-            Place {side === 'buy' ? 'Long' : 'Short'} {orderType.charAt(0).toUpperCase() + orderType.slice(1)}
+            Place {side === 'buy' ? 'Long' : 'Short'} {orderType.charAt(0).toUpperCase() + orderType.slice(1)} Order
             {mode === 'paper' && <Badge variant="outline" className="ml-2 text-[10px]">Paper</Badge>}
           </>
         )}
@@ -317,6 +339,7 @@ export function OrderTicket() {
           <span>Risk exceeds 2% of account</span>
         </div>
       )}
+      </div>
     </div>
   )
 }

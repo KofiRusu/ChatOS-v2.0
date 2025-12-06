@@ -24,6 +24,41 @@ export interface ExchangeAccount {
   currency: string
   connected: boolean
   apiKeySet: boolean
+  // Hyperliquid specific
+  walletAddress?: string
+  network?: 'mainnet' | 'testnet'
+}
+
+// Hyperliquid connection credentials (stored in session only)
+export interface HyperliquidCredentials {
+  walletAddress: string
+  privateKey: string
+  network: 'mainnet' | 'testnet'
+}
+
+// Helper to manage Hyperliquid credentials in sessionStorage (survives refresh, not browser close)
+const HYPERLIQUID_CREDS_KEY = 'hyperliquid-session-creds'
+
+function saveHyperliquidCredsToSession(creds: HyperliquidCredentials | null) {
+  if (typeof window === 'undefined') return
+  if (creds) {
+    // Encrypt/encode the private key for session storage (basic base64, in production use proper encryption)
+    const encoded = btoa(JSON.stringify(creds))
+    sessionStorage.setItem(HYPERLIQUID_CREDS_KEY, encoded)
+  } else {
+    sessionStorage.removeItem(HYPERLIQUID_CREDS_KEY)
+  }
+}
+
+function loadHyperliquidCredsFromSession(): HyperliquidCredentials | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const encoded = sessionStorage.getItem(HYPERLIQUID_CREDS_KEY)
+    if (!encoded) return null
+    return JSON.parse(atob(encoded))
+  } catch {
+    return null
+  }
 }
 
 export interface MarketSymbol {
@@ -107,6 +142,65 @@ export interface JournalEntry {
 }
 
 // =============================================================================
+// Backtest Types
+// =============================================================================
+
+export interface BacktestConfig {
+  symbols: string[]
+  timeframe: '1m' | '5m' | '15m'
+  initialBalance: number
+  days: number
+  maxPositionSize: number
+  riskPerTrade: number
+  stopLossPercent: number
+  takeProfitPercent: number
+  modelName?: string // PersRM model version used for this backtest
+}
+
+export interface BacktestMetrics {
+  totalReturn: number
+  annualizedReturn: number
+  totalTrades: number
+  winningTrades: number
+  losingTrades: number
+  winRate: number
+  profitFactor: number
+  maxDrawdown: number
+  sharpeRatio: number
+  sortinoRatio: number
+  averageTradeReturn: number
+  expectancy: number
+}
+
+export interface BacktestTrade {
+  id: string
+  symbol: string
+  side: 'long' | 'short'
+  entryPrice: number
+  exitPrice: number
+  entryTime: number
+  exitTime: number
+  size: number
+  pnl: number
+  pnlPercent: number
+  fees: number
+  reason: string
+}
+
+export interface BacktestResult {
+  id: string
+  config: BacktestConfig
+  metrics: BacktestMetrics
+  trades: BacktestTrade[]
+  equityCurve: { timestamp: number; equity: number }[]
+  duration: number
+  startTime: string
+  endTime: string
+  status: 'completed' | 'error'
+  error?: string
+}
+
+// =============================================================================
 // Store State
 // =============================================================================
 
@@ -136,16 +230,28 @@ interface TradingState {
   
   // UI state
   selectedTab: 'markets' | 'portfolio' | 'journal'
-  rightPanelTab: 'assistant' | 'news' | 'sentiment' | 'alerts'
+  rightPanelTab: 'assistant' | 'news' | 'sentiment' | 'alerts' | 'auto' | 'backtest' | 'data' | 'paper' | 'validate'
   isLabOpen: boolean
+  
+  // Auto-trading state
+  autoTradingEnabled: boolean
+  autoTradingMode: 'paper' | 'live'
+  
+  // Backtest history state
+  backtestHistory: BacktestResult[]
+  currentBacktestId: string | null
+  isBacktesting: boolean
+  backtestProgress: number
   
   // Actions
   setCurrentAccount: (accountId: string) => void
   setMode: (mode: TradingMode) => void
   setCurrentSymbol: (symbol: string) => void
   setSelectedTab: (tab: 'markets' | 'portfolio' | 'journal') => void
-  setRightPanelTab: (tab: 'assistant' | 'news' | 'sentiment' | 'alerts') => void
+  setRightPanelTab: (tab: 'assistant' | 'news' | 'sentiment' | 'alerts' | 'auto') => void
   setLabOpen: (open: boolean) => void
+  setAutoTradingEnabled: (enabled: boolean) => void
+  setAutoTradingMode: (mode: 'paper' | 'live') => void
   
   // Trading actions
   addPosition: (position: Omit<Position, 'id'>) => void
@@ -160,7 +266,21 @@ interface TradingState {
   
   // Exchange actions
   connectExchange: (exchange: Exchange, apiKey: string, secret: string) => Promise<boolean>
+  connectHyperliquid: (walletAddress: string, privateKey: string, network: 'mainnet' | 'testnet') => Promise<boolean>
   disconnectExchange: (accountId: string) => void
+  
+  // Hyperliquid credentials (session only)
+  hyperliquidCredentials: HyperliquidCredentials | null
+  setHyperliquidCredentials: (creds: HyperliquidCredentials | null) => void
+  
+  // Backtest actions
+  addBacktestResult: (result: BacktestResult) => void
+  setCurrentBacktestId: (id: string | null) => void
+  clearBacktestHistory: () => void
+  loadBacktestHistory: () => Promise<void>
+  setBacktestProgress: (progress: number) => void
+  setIsBacktesting: (isBacktesting: boolean) => void
+  getBacktestById: (id: string) => BacktestResult | undefined
   
   // Mock data
   initializeMockData: () => void
@@ -183,96 +303,64 @@ const mockAccounts: ExchangeAccount[] = [
   },
 ]
 
+// Live prices - these will be updated from API
 const mockMarkets: MarketSymbol[] = [
-  { symbol: 'BTCUSDT', baseAsset: 'BTC', quoteAsset: 'USDT', exchange: 'binance', price: 67500, change24h: 2.5, volume24h: 45000000000, high24h: 68200, low24h: 65800 },
-  { symbol: 'ETHUSDT', baseAsset: 'ETH', quoteAsset: 'USDT', exchange: 'binance', price: 3450, change24h: 1.8, volume24h: 18000000000, high24h: 3520, low24h: 3380 },
-  { symbol: 'SOLUSDT', baseAsset: 'SOL', quoteAsset: 'USDT', exchange: 'binance', price: 178, change24h: 4.2, volume24h: 3500000000, high24h: 185, low24h: 168 },
-  { symbol: 'BNBUSDT', baseAsset: 'BNB', quoteAsset: 'USDT', exchange: 'binance', price: 620, change24h: -0.8, volume24h: 1200000000, high24h: 635, low24h: 612 },
-  { symbol: 'XRPUSDT', baseAsset: 'XRP', quoteAsset: 'USDT', exchange: 'binance', price: 2.15, change24h: 3.1, volume24h: 2800000000, high24h: 2.22, low24h: 2.05 },
-  { symbol: 'ADAUSDT', baseAsset: 'ADA', quoteAsset: 'USDT', exchange: 'binance', price: 1.05, change24h: 1.2, volume24h: 890000000, high24h: 1.08, low24h: 1.02 },
+  { symbol: 'BTCUSDT', baseAsset: 'BTC', quoteAsset: 'USDT', exchange: 'binance', price: 101500, change24h: 2.5, volume24h: 45000000000, high24h: 103000, low24h: 99000 },
+  { symbol: 'ETHUSDT', baseAsset: 'ETH', quoteAsset: 'USDT', exchange: 'binance', price: 3900, change24h: 1.8, volume24h: 18000000000, high24h: 3980, low24h: 3820 },
+  { symbol: 'SOLUSDT', baseAsset: 'SOL', quoteAsset: 'USDT', exchange: 'binance', price: 230, change24h: 4.2, volume24h: 3500000000, high24h: 240, low24h: 220 },
+  { symbol: 'BNBUSDT', baseAsset: 'BNB', quoteAsset: 'USDT', exchange: 'binance', price: 720, change24h: -0.8, volume24h: 1200000000, high24h: 735, low24h: 705 },
+  { symbol: 'XRPUSDT', baseAsset: 'XRP', quoteAsset: 'USDT', exchange: 'binance', price: 2.40, change24h: 3.1, volume24h: 2800000000, high24h: 2.50, low24h: 2.30 },
+  { symbol: 'ADAUSDT', baseAsset: 'ADA', quoteAsset: 'USDT', exchange: 'binance', price: 1.10, change24h: 1.2, volume24h: 890000000, high24h: 1.15, low24h: 1.05 },
 ]
 
 const mockWatchlists = {
   favorites: [
-    { symbol: 'BTCUSDT', name: 'Bitcoin', price: 67500, change24h: 2.5 },
-    { symbol: 'ETHUSDT', name: 'Ethereum', price: 3450, change24h: 1.8 },
-    { symbol: 'SOLUSDT', name: 'Solana', price: 178, change24h: 4.2 },
+    { symbol: 'BTCUSDT', name: 'Bitcoin', price: 101500, change24h: 2.5 },
+    { symbol: 'ETHUSDT', name: 'Ethereum', price: 3900, change24h: 1.8 },
+    { symbol: 'SOLUSDT', name: 'Solana', price: 230, change24h: 4.2 },
   ],
   crypto: [
-    { symbol: 'BTCUSDT', name: 'Bitcoin', price: 67500, change24h: 2.5 },
-    { symbol: 'ETHUSDT', name: 'Ethereum', price: 3450, change24h: 1.8 },
-    { symbol: 'SOLUSDT', name: 'Solana', price: 178, change24h: 4.2 },
-    { symbol: 'BNBUSDT', name: 'BNB', price: 620, change24h: -0.8 },
-    { symbol: 'XRPUSDT', name: 'XRP', price: 2.15, change24h: 3.1 },
+    { symbol: 'BTCUSDT', name: 'Bitcoin', price: 101500, change24h: 2.5 },
+    { symbol: 'ETHUSDT', name: 'Ethereum', price: 3900, change24h: 1.8 },
+    { symbol: 'SOLUSDT', name: 'Solana', price: 230, change24h: 4.2 },
+    { symbol: 'BNBUSDT', name: 'BNB', price: 720, change24h: -0.8 },
+    { symbol: 'XRPUSDT', name: 'XRP', price: 2.40, change24h: 3.1 },
   ],
 }
 
-const mockPositions: Position[] = [
-  {
-    id: 'pos-1',
-    symbol: 'BTCUSDT',
-    side: 'long',
-    size: 0.5,
-    entryPrice: 65000,
-    currentPrice: 67500,
-    pnl: 1250,
-    pnlPercent: 3.85,
-    leverage: 1,
-    stopLoss: 62000,
-    takeProfit: 72000,
-    strategy: 'Manual',
-    openedAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-  },
-]
+// Empty mock positions - real data comes from connected exchanges
+const mockPositions: Position[] = []
 
-const mockNews: NewsItem[] = [
-  {
-    id: 'news-1',
-    title: 'Bitcoin ETF inflows reach $500M in single day',
-    source: 'CoinDesk',
-    url: '#',
-    timestamp: new Date(Date.now() - 3600000).toISOString(),
-    sentiment: 'bullish',
-    symbols: ['BTCUSDT'],
-  },
-  {
-    id: 'news-2',
-    title: 'Ethereum upgrade scheduled for Q1 2025',
-    source: 'The Block',
-    url: '#',
-    timestamp: new Date(Date.now() - 7200000).toISOString(),
-    sentiment: 'bullish',
-    symbols: ['ETHUSDT'],
-  },
-  {
-    id: 'news-3',
-    title: 'Fed signals potential rate cuts in 2025',
-    source: 'Bloomberg',
-    url: '#',
-    timestamp: new Date(Date.now() - 10800000).toISOString(),
-    sentiment: 'bullish',
-    symbols: ['BTCUSDT', 'ETHUSDT'],
-  },
-  {
-    id: 'news-4',
-    title: 'Solana network processes 50K TPS in stress test',
-    source: 'Decrypt',
-    url: '#',
-    timestamp: new Date(Date.now() - 14400000).toISOString(),
-    sentiment: 'bullish',
-    symbols: ['SOLUSDT'],
-  },
-]
+// News will be loaded from scraped data API, not mock
+const mockNews: NewsItem[] = []
 
-const mockPortfolio: PortfolioStats = {
-  totalValue: 101250,
-  dayPnl: 1250,
-  dayPnlPercent: 1.25,
-  weekPnl: 3500,
-  monthPnl: 8200,
-  maxDrawdown: -5.2,
-  winRate: 62,
-  totalTrades: 47,
+// Portfolio stats will be computed from actual positions
+const computePortfolioStats = (positions: Position[], balance: number): PortfolioStats => {
+  const totalPnl = positions.reduce((sum, p) => sum + p.pnl, 0)
+  const winningTrades = positions.filter(p => p.pnl > 0).length
+  const totalTrades = positions.length
+  
+  return {
+    totalValue: balance + totalPnl,
+    dayPnl: totalPnl, // In real implementation, filter by today's positions
+    dayPnlPercent: balance > 0 ? (totalPnl / balance) * 100 : 0,
+    weekPnl: totalPnl, // In real implementation, filter by week's positions
+    monthPnl: totalPnl, // In real implementation, filter by month's positions
+    maxDrawdown: 0, // Calculated from equity curve
+    winRate: totalTrades > 0 ? (winningTrades / totalTrades) * 100 : 0,
+    totalTrades,
+  }
+}
+
+const defaultPortfolio: PortfolioStats = {
+  totalValue: 100000,
+  dayPnl: 0,
+  dayPnlPercent: 0,
+  weekPnl: 0,
+  monthPnl: 0,
+  maxDrawdown: 0,
+  winRate: 0,
+  totalTrades: 0,
 }
 
 // =============================================================================
@@ -306,6 +394,19 @@ export const useTradingStore = create<TradingState>()(
       selectedTab: 'markets',
       rightPanelTab: 'assistant',
       isLabOpen: false,
+      
+      // Auto-trading state
+      autoTradingEnabled: false,
+      autoTradingMode: 'paper',
+      
+      // Backtest history state
+      backtestHistory: [],
+      currentBacktestId: null,
+      isBacktesting: false,
+      backtestProgress: 0,
+      
+      // Hyperliquid credentials (session only, not persisted)
+      hyperliquidCredentials: null,
 
       // Actions
       setCurrentAccount: (accountId) => set({ currentAccountId: accountId }),
@@ -314,6 +415,8 @@ export const useTradingStore = create<TradingState>()(
       setSelectedTab: (tab) => set({ selectedTab: tab }),
       setRightPanelTab: (tab) => set({ rightPanelTab: tab }),
       setLabOpen: (open) => set({ isLabOpen: open }),
+      setAutoTradingEnabled: (enabled) => set({ autoTradingEnabled: enabled }),
+      setAutoTradingMode: (mode) => set({ autoTradingMode: mode }),
 
       addPosition: (position) => {
         const id = `pos-${Date.now()}`
@@ -423,35 +526,194 @@ export const useTradingStore = create<TradingState>()(
         return true
       },
 
+      connectHyperliquid: async (walletAddress, privateKey, network) => {
+        try {
+          const creds = { walletAddress, privateKey, network }
+          
+          // Store credentials in session storage (survives page refresh)
+          saveHyperliquidCredsToSession(creds)
+          set({ hyperliquidCredentials: creds })
+          
+          // Verify connection via API
+          const response = await fetch('/api/hyperliquid/connect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ walletAddress, privateKey, network }),
+          })
+
+          if (!response.ok) {
+            const data = await response.json()
+            throw new Error(data.error || 'Connection failed')
+          }
+
+          const data = await response.json()
+          
+          // Create account entry with a stable ID based on wallet address
+          const accountId = `hyperliquid-${network}-${walletAddress.slice(-8)}`
+          
+          const newAccount: ExchangeAccount = {
+            id: accountId,
+            exchange: 'hyperliquid',
+            name: `Hyperliquid ${network === 'testnet' ? 'Testnet' : 'Mainnet'}`,
+            type: 'futures',
+            balance: data.balance || 0,
+            currency: 'USDC',
+            connected: true,
+            apiKeySet: true,
+            walletAddress,
+            network,
+          }
+          
+          set((state) => ({
+            accounts: [...state.accounts.filter(a => 
+              !(a.exchange === 'hyperliquid' && a.network === network)
+            ), newAccount],
+            currentAccountId: newAccount.id,
+            mode: network === 'testnet' ? 'paper' : 'live',
+          }))
+          
+          return true
+        } catch (error) {
+          console.error('Hyperliquid connection error:', error)
+          saveHyperliquidCredsToSession(null)
+          set({ hyperliquidCredentials: null })
+          return false
+        }
+      },
+      
+      setHyperliquidCredentials: (creds) => {
+        saveHyperliquidCredsToSession(creds)
+        set({ hyperliquidCredentials: creds })
+      },
+
+      // Backtest actions
+      addBacktestResult: (result) => {
+        set((state) => ({
+          backtestHistory: [result, ...state.backtestHistory].slice(0, 50), // Keep last 50
+          currentBacktestId: result.id,
+          isBacktesting: false,
+          backtestProgress: 100,
+        }))
+      },
+
+      setCurrentBacktestId: (id) => set({ currentBacktestId: id }),
+
+      clearBacktestHistory: () => set({ 
+        backtestHistory: [], 
+        currentBacktestId: null 
+      }),
+
+      loadBacktestHistory: async () => {
+        try {
+          const response = await fetch('/api/backtest/history')
+          if (response.ok) {
+            const data = await response.json()
+            set({ backtestHistory: data.backtests || [] })
+          }
+        } catch (error) {
+          console.error('Failed to load backtest history:', error)
+        }
+      },
+
+      setBacktestProgress: (progress) => set({ backtestProgress: progress }),
+
+      setIsBacktesting: (isBacktesting) => set({ isBacktesting }),
+
+      getBacktestById: (id) => {
+        return get().backtestHistory.find(b => b.id === id)
+      },
+
       disconnectExchange: (accountId) => {
+        const account = get().accounts.find(a => a.id === accountId)
+        
+        // Clear Hyperliquid credentials if disconnecting Hyperliquid
+        if (account?.exchange === 'hyperliquid') {
+          saveHyperliquidCredsToSession(null)
+          set({ hyperliquidCredentials: null })
+        }
+        
         set((state) => ({
           accounts: state.accounts.filter((a) => a.id !== accountId),
           currentAccountId: state.currentAccountId === accountId
-            ? state.accounts[0]?.id || null
+            ? state.accounts.find(a => a.id !== accountId)?.id || null
             : state.currentAccountId,
         }))
       },
 
       initializeMockData: () => {
+        const currentState = get()
+        
+        // Preserve any connected exchange accounts (like Hyperliquid)
+        const connectedAccounts = currentState.accounts.filter(a => 
+          a.connected && a.exchange !== 'paper'
+        )
+        
+        // Restore Hyperliquid credentials from session storage
+        const savedCreds = loadHyperliquidCredsFromSession()
+        if (savedCreds && !currentState.hyperliquidCredentials) {
+          set({ hyperliquidCredentials: savedCreds })
+        }
+        
+        // Merge paper account with connected accounts
+        const mergedAccounts = [
+          ...mockAccounts,
+          ...connectedAccounts.filter(a => !mockAccounts.some(m => m.id === a.id))
+        ]
+        
+        // Determine current account - prefer connected exchange over paper
+        const preferredAccount = connectedAccounts.length > 0 
+          ? connectedAccounts[0].id 
+          : (currentState.currentAccountId || 'paper-main')
+        
+        // Check if using a real exchange - don't load mock positions
+        const usingRealExchange = connectedAccounts.length > 0 && 
+          connectedAccounts.some(a => a.id === preferredAccount)
+        
+        // Filter out mock positions if using real exchange, keep real positions
+        const positionsToUse = usingRealExchange 
+          ? currentState.positions.filter((p: any) => p.exchange && p.exchange !== 'mock')
+          : currentState.positions // Keep existing positions (empty if none)
+        
+        // Get current account balance for portfolio calculation
+        const currentAccount = mergedAccounts.find(a => a.id === preferredAccount)
+        const accountBalance = currentAccount?.balance || 100000
+        
+        // Compute portfolio from actual positions instead of using mock stats
+        const portfolio = positionsToUse.length > 0 
+          ? computePortfolioStats(positionsToUse, accountBalance)
+          : { ...defaultPortfolio, totalValue: accountBalance }
+        
         set({
-          accounts: mockAccounts,
-          currentAccountId: 'paper-main',
-          markets: mockMarkets,
-          watchlists: mockWatchlists,
-          positions: mockPositions,
-          portfolio: mockPortfolio,
-          news: mockNews,
+          accounts: mergedAccounts,
+          currentAccountId: preferredAccount,
+          markets: mockMarkets, // Initial values, will be updated by CCXT API
+          watchlists: currentState.watchlists && Object.keys(currentState.watchlists).length > 0 
+            ? currentState.watchlists 
+            : mockWatchlists,
+          positions: positionsToUse,
+          portfolio, // Computed from real positions
+          news: currentState.news.length > 0 ? currentState.news : [], // Don't load fake news
         })
       },
     }),
     {
       name: 'trading-store',
       partialize: (state) => ({
+        // Persist accounts (but filter out sensitive data like private keys)
+        accounts: state.accounts.map(a => ({
+          ...a,
+          // Don't persist the private key in localStorage
+        })),
         currentAccountId: state.currentAccountId,
         currentSymbol: state.currentSymbol,
         mode: state.mode,
         watchlists: state.watchlists,
         journal: state.journal,
+        positions: state.positions,
+        autoTradingMode: state.autoTradingMode,
+        // Persist backtest history (survives tab switch and refresh)
+        backtestHistory: state.backtestHistory,
+        currentBacktestId: state.currentBacktestId,
       }),
     }
   )

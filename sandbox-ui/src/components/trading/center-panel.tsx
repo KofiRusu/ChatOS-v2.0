@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useTradingStore } from '@/stores/trading-store'
 import { TradingChart } from './chart/trading-chart'
 import { OrderTicket } from './order-ticket/order-ticket'
@@ -13,21 +13,61 @@ import {
   Book, 
   History,
   ListOrdered,
-  TrendingUp
+  TrendingUp,
+  RefreshCw
 } from 'lucide-react'
 
-export function CenterPanel() {
-  const { currentSymbol, positions, orders, markets } = useTradingStore()
-  const [chartTab, setChartTab] = useState<'depth' | 'trades'>('depth')
+interface LiveTicker {
+  symbol: string
+  last: number
+  high: number
+  low: number
+  volume: number
+  change: number
+  percentage: number
+}
 
-  const currentMarket = markets.find(m => m.symbol === currentSymbol)
+export function CenterPanel() {
+  const { currentSymbol, positions, orders } = useTradingStore()
+  const [chartTab, setChartTab] = useState<'depth' | 'trades'>('depth')
+  const [ticker, setTicker] = useState<LiveTicker | null>(null)
+  const [tickerLoading, setTickerLoading] = useState(true)
+  const [timeframe, setTimeframe] = useState('1h')
+
+  const fetchTicker = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/market?action=ticker&symbol=${currentSymbol}`)
+      if (!response.ok) throw new Error('Failed to fetch ticker')
+      const data = await response.json()
+      setTicker({
+        symbol: data.symbol,
+        last: data.last,
+        high: data.high,
+        low: data.low,
+        volume: data.volume,
+        change: data.change,
+        percentage: data.percentage,
+      })
+      setTickerLoading(false)
+    } catch (err) {
+      console.error('Error fetching ticker:', err)
+      setTickerLoading(false)
+    }
+  }, [currentSymbol])
+
+  // Fetch ticker on mount and every 5 seconds
+  useEffect(() => {
+    fetchTicker()
+    const interval = setInterval(fetchTicker, 5000)
+    return () => clearInterval(interval)
+  }, [fetchTicker])
 
   const openOrders = orders.filter(o => o.status === 'pending')
 
   return (
-    <div className="flex-1 flex flex-col bg-[#0a0a0f] overflow-hidden">
-      {/* Chart Area */}
-      <div className="flex-1 flex min-h-0">
+    <div className="flex-1 flex flex-col bg-[#0a0a0f] overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-track-gray-900 scrollbar-thumb-gray-700">
+      {/* Chart Area - Flexible height with minimum */}
+      <div className="flex h-[55vh] min-h-[400px] flex-shrink-0">
         {/* Main Chart */}
         <div className="flex-1 flex flex-col border-r border-gray-800">
           {/* Chart Header */}
@@ -36,17 +76,18 @@ export function CenterPanel() {
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-lg font-bold">{currentSymbol}</span>
-                  {currentMarket && (
-                    <Badge variant={currentMarket.change24h >= 0 ? 'default' : 'destructive'} className="text-xs">
-                      {currentMarket.change24h >= 0 ? '+' : ''}{currentMarket.change24h.toFixed(2)}%
+                  {ticker && (
+                    <Badge variant={ticker.percentage >= 0 ? 'default' : 'destructive'} className="text-xs">
+                      {ticker.percentage >= 0 ? '+' : ''}{ticker.percentage.toFixed(2)}%
                     </Badge>
                   )}
+                  {tickerLoading && <RefreshCw className="w-3 h-3 animate-spin text-gray-500" />}
                 </div>
-                {currentMarket && (
+                {ticker && (
                   <div className="flex items-center gap-4 text-xs text-gray-500">
-                    <span>H: ${currentMarket.high24h.toLocaleString()}</span>
-                    <span>L: ${currentMarket.low24h.toLocaleString()}</span>
-                    <span>Vol: ${(currentMarket.volume24h / 1e9).toFixed(2)}B</span>
+                    <span>H: ${ticker.high.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    <span>L: ${ticker.low.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                    <span>Vol: ${(ticker.volume / 1e6).toFixed(2)}M</span>
                   </div>
                 )}
               </div>
@@ -54,25 +95,35 @@ export function CenterPanel() {
 
             {/* Timeframe Selector */}
             <div className="flex items-center gap-1 bg-gray-900 rounded-lg p-0.5">
-              {['1m', '5m', '15m', '1H', '4H', '1D'].map((tf) => (
+              {['1m', '5m', '15m', '1H', '4H', '1D'].map((tf) => {
+                // Map display format to API format
+                const apiTimeframe = tf === '1H' ? '1h' : tf === '4H' ? '4h' : tf === '1D' ? '1d' : tf.toLowerCase()
+                const isActive = timeframe === apiTimeframe
+                return (
                 <button
                   key={tf}
-                  className="px-2.5 py-1 text-xs font-medium rounded-md hover:bg-gray-800 transition-colors text-gray-400 hover:text-white"
+                    onClick={() => setTimeframe(apiTimeframe)}
+                    className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                      isActive
+                        ? 'bg-purple-600 text-white'
+                        : 'hover:bg-gray-800 text-gray-400 hover:text-white'
+                    }`}
                 >
                   {tf}
                 </button>
-              ))}
+                )
+              })}
             </div>
           </div>
 
           {/* Chart */}
           <div className="flex-1 min-h-0">
-            <TradingChart symbol={currentSymbol} />
+            <TradingChart symbol={currentSymbol} timeframe={timeframe} />
           </div>
         </div>
 
         {/* Order Book / Recent Trades */}
-        <div className="w-72 flex flex-col border-r border-gray-800 bg-[#0d0d14]">
+        <div className="w-64 flex flex-col border-r border-gray-800 bg-[#0d0d14]">
           <Tabs value={chartTab} onValueChange={(v) => setChartTab(v as any)} className="flex-1 flex flex-col">
             <TabsList className="w-full justify-start gap-1 px-2 pt-2 bg-transparent rounded-none h-auto pb-2 border-b border-gray-800">
               <TabsTrigger 
@@ -103,7 +154,7 @@ export function CenterPanel() {
       </div>
 
       {/* Bottom Section: Order Ticket + Positions */}
-      <div className="h-80 border-t border-gray-800 flex">
+      <div className="h-80 min-h-72 border-t border-gray-800 flex flex-shrink-0">
         {/* Order Ticket */}
         <div className="w-80 border-r border-gray-800">
           <OrderTicket />
@@ -150,14 +201,35 @@ export function CenterPanel() {
 }
 
 function RecentTrades({ symbol }: { symbol: string }) {
-  // Mock recent trades
-  const trades = Array.from({ length: 20 }, (_, i) => ({
-    id: i,
-    price: 67500 + (Math.random() - 0.5) * 200,
-    size: Math.random() * 2,
-    side: Math.random() > 0.5 ? 'buy' : 'sell',
-    time: new Date(Date.now() - i * 5000).toLocaleTimeString(),
-  }))
+  const [trades, setTrades] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  const fetchTrades = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/market?action=trades&symbol=${symbol}&limit=20`)
+      if (!response.ok) throw new Error('Failed to fetch trades')
+      const data = await response.json()
+      setTrades(data.trades || [])
+      setLoading(false)
+    } catch (err) {
+      console.error('Error fetching trades:', err)
+      setLoading(false)
+    }
+  }, [symbol])
+
+  useEffect(() => {
+    fetchTrades()
+    const interval = setInterval(fetchTrades, 5000)
+    return () => clearInterval(interval)
+  }, [fetchTrades])
+
+  if (loading && trades.length === 0) {
+    return (
+      <div className="h-full flex items-center justify-center text-gray-500">
+        <RefreshCw className="w-5 h-5 animate-spin" />
+      </div>
+    )
+  }
 
   return (
     <div className="h-full overflow-auto">
@@ -170,16 +242,16 @@ function RecentTrades({ symbol }: { symbol: string }) {
           </tr>
         </thead>
         <tbody>
-          {trades.map((trade) => (
-            <tr key={trade.id} className="hover:bg-gray-900/50">
+          {trades.map((trade, i) => (
+            <tr key={trade.id || i} className="hover:bg-gray-900/50">
               <td className={`p-2 font-mono ${trade.side === 'buy' ? 'text-green-400' : 'text-red-400'}`}>
-                ${trade.price.toFixed(2)}
+                ${trade.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}
               </td>
               <td className="p-2 text-right font-mono text-gray-400">
-                {trade.size.toFixed(4)}
+                {trade.amount.toFixed(4)}
               </td>
               <td className="p-2 text-right text-gray-500">
-                {trade.time}
+                {new Date(trade.timestamp).toLocaleTimeString()}
               </td>
             </tr>
           ))}
@@ -242,4 +314,3 @@ function OrdersTable() {
     </table>
   )
 }
-
